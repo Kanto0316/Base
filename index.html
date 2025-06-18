@@ -219,16 +219,15 @@
     Liste des éléments
     <button style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" title="Options">⋮</button>
     <div class="form-group search-group" style="max-width: 380px; margin: 1rem auto 0;">
-      <label for="quickSearch">Recherche</label>
-      <input type="text" id="quickSearch" autocomplete="off">
+      <input type="text" id="quickSearch" placeholder="Recherche..." autocomplete="off">
       <ul class="history-list" id="searchHistoryList"></ul>
-      <div id="noResults" class="no-results">Aucun résultat trouvé</div>
     </div>
   </header>
   <div id="feedback">Liste ajoutée !</div>
 
   <div class="container">
     <!-- Contenu à venir ici -->
+    <div id="noResultsMessage" class="no-results">Aucun résultat trouvé</div>
   </div>
 
   <button class="fab" title="Ajouter" onclick="openModal()">+</button>
@@ -297,6 +296,7 @@
       const exitDate = document.getElementById('exitDate').value;
 
       const container = document.querySelector('.container');
+      const msg = document.getElementById('noResultsMessage');
       const newListItem = document.createElement('div');
       newListItem.textContent = listName.toUpperCase();
       newListItem.style.padding = '1rem';
@@ -304,7 +304,7 @@
       newListItem.style.background = '#ecf0f1';
       newListItem.style.borderRadius = '8px';
       newListItem.style.fontWeight = 'bold';
-      container.appendChild(newListItem);
+      container.insertBefore(newListItem, msg);
       filterDisplayedLists();
 
       let history = JSON.parse(localStorage.getItem('listNameHistory')) || [];
@@ -384,7 +384,7 @@
 
     function filterDisplayedLists() {
       const value = document.getElementById('quickSearch').value.trim().toUpperCase();
-      const items = document.querySelectorAll('.container > div');
+      const items = document.querySelectorAll('.container > div:not(#noResultsMessage)');
       let anyVisible = false;
       items.forEach(item => {
         if (!value || item.innerText.toUpperCase().includes(value)) {
@@ -394,7 +394,7 @@
           item.style.display = 'none';
         }
       });
-      const msg = document.getElementById('noResults');
+      const msg = document.getElementById('noResultsMessage');
       if (!anyVisible && value) {
         msg.style.display = 'block';
       } else {
