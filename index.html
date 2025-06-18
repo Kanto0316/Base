@@ -39,6 +39,14 @@
       background-color: #f2f2f2;
     }
 
+    .no-results {
+      display: none;
+      text-align: center;
+      color: #888;
+      font-style: italic;
+      margin-top: 1rem;
+    }
+
     body {
       font-family: Arial, sans-serif;
       margin: 0;
@@ -214,6 +222,7 @@
       <label for="quickSearch">Recherche</label>
       <input type="text" id="quickSearch" autocomplete="off">
       <ul class="history-list" id="searchHistoryList"></ul>
+      <div id="noResults" class="no-results">Aucun résultat trouvé</div>
     </div>
   </header>
   <div id="feedback">Liste ajoutée !</div>
@@ -296,6 +305,7 @@
       newListItem.style.borderRadius = '8px';
       newListItem.style.fontWeight = 'bold';
       container.appendChild(newListItem);
+      filterDisplayedLists();
 
       let history = JSON.parse(localStorage.getItem('listNameHistory')) || [];
       if (!history.includes(listName)) {
@@ -372,8 +382,31 @@
       showGenericHistory('siteCode', input.value);
     }
 
+    function filterDisplayedLists() {
+      const value = document.getElementById('quickSearch').value.trim().toUpperCase();
+      const items = document.querySelectorAll('.container > div');
+      let anyVisible = false;
+      items.forEach(item => {
+        if (!value || item.innerText.toUpperCase().includes(value)) {
+          item.style.display = '';
+          anyVisible = true;
+        } else {
+          item.style.display = 'none';
+        }
+      });
+      const msg = document.getElementById('noResults');
+      if (!anyVisible && value) {
+        msg.style.display = 'block';
+      } else {
+        msg.style.display = 'none';
+      }
+    }
+
     const quick = document.getElementById('quickSearch');
-    quick.addEventListener('input', (e) => showGenericHistory('quickSearch', e.target.value));
+    quick.addEventListener('input', (e) => {
+      showGenericHistory('quickSearch', e.target.value);
+      filterDisplayedLists();
+    });
     quick.addEventListener('blur', () => {
       setTimeout(() => {
         const list = document.getElementById('searchHistoryList');
