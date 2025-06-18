@@ -19,10 +19,13 @@
       display: none;
     }
 
-    .history-list li {
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-    }
+      .history-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+      }
 
     .history-list li:hover {
       background-color: #f2f2f2;
@@ -241,14 +244,19 @@
       const modal = document.getElementById('modal');
       modal.classList.add('show');
       modal.style.display = 'flex';
-      document.querySelectorAll('.modal-content input').forEach(i => i.value = '');
-      document.getElementById('listName').addEventListener('focus', showHistory);
-      document.getElementById('listName').addEventListener('blur', () => {
-        setTimeout(() => document.getElementById('nameHistory').style.display = 'none', 100);
-      });
-      document.getElementById('siteCode').addEventListener('focus', showCodeHistory);
-      document.getElementById('siteCode').addEventListener('blur', () => {
-        setTimeout(() => document.getElementById('codeHistory').style.display = 'none', 100);
+      document.querySelectorAll('.modal-content input').forEach(i => {
+        i.value = '';
+        if (i.type === 'text') {
+          i.addEventListener('focus', () => showGenericHistory(i.id));
+          const mapping = {listName: 'nameHistory', siteCode: 'codeHistory'};
+          const listId = mapping[i.id] || i.id + 'History';
+          i.addEventListener('blur', () => {
+            setTimeout(() => {
+              const list = document.getElementById(listId);
+              if (list) list.style.display = 'none';
+            }, 100);
+          });
+        }
       });
     }
 
@@ -294,15 +302,34 @@
       closeModal();
     }
 
-    function showHistory() {
-      const input = document.getElementById('listName');
-      const historyList = document.getElementById('nameHistory');
-      const history = JSON.parse(localStorage.getItem('listNameHistory')) || [];
+    function showGenericHistory(inputId) {
+      const mapping = {listName: 'nameHistory', siteCode: 'codeHistory'};
+      const listId = mapping[inputId] || inputId + 'History';
+      const input = document.getElementById(inputId);
+      const historyList = document.getElementById(listId);
+      const key = inputId + 'History';
+      let history = JSON.parse(localStorage.getItem(key)) || [];
+      history = history.map(h => h.trim()).filter(h => h !== '');
+      localStorage.setItem(key, JSON.stringify(history));
       historyList.innerHTML = '';
-      history.forEach(item => {
+      history.forEach((item, index) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        const span = document.createElement('span');
+        span.textContent = item;
+        li.appendChild(span);
+        const btn = document.createElement('button');
+        btn.textContent = '✕';
+        btn.style.background = 'none';
+        btn.style.border = 'none';
+        btn.style.cursor = 'pointer';
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          history.splice(index, 1);
+          localStorage.setItem(key, JSON.stringify(history));
+          showGenericHistory(inputId);
+        };
         li.onclick = () => input.value = item;
+        li.appendChild(btn);
         historyList.appendChild(li);
       });
       if (history.length > 0) {
@@ -310,20 +337,12 @@
       }
     }
 
+    function showHistory() {
+      showGenericHistory('listName');
+    }
+
     function showCodeHistory() {
-      const input = document.getElementById('siteCode');
-      const historyList = document.getElementById('codeHistory');
-      const history = JSON.parse(localStorage.getItem('siteCodeHistory')) || [];
-      historyList.innerHTML = '';
-      history.forEach(item => {
-        const li = document.createElement('li');
-        li.textContent = item;
-        li.onclick = () => input.value = item;
-        historyList.appendChild(li);
-      });
-      if (history.length > 0) {
-        historyList.style.display = 'block';
-      }
+      showGenericHistory('siteCode');
     }
 
     window.onclick = function(event) {
