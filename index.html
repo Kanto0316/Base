@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Liste des éléments</title>
+  <style>
+    .history-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-top: none;
+      border-radius: 0 0 8px 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      z-index: 10;
+      display: none;
+    }
+
+    .history-list li {
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+
+    .history-list li:hover {
+      background-color: #f2f2f2;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f4;
+    }
+
+    header {
+      background-color: #2c3e50;
+      color: white;
+      text-align: center;
+      padding: 1.5rem 0;
+      font-size: 1.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: relative;
+    }
+
+    .container {
+      padding: 2rem;
+      min-height: 80vh;
+    }
+
+    .fab {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 56px;
+      height: 56px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      font-size: 2rem;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      transition: background-color 0.3s ease;
+    }
+
+    .fab:hover {
+      background-color: #2980b9;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .modal.show {
+      display: flex !important;
+      opacity: 1;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 2rem;
+      border-radius: 16px;
+      width: calc(100% - 2rem);
+      max-width: 380px;
+      box-sizing: border-box;
+      text-align: center;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-content h2 {
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+
+    .modal-content h2::after {
+      content: "";
+      display: block;
+      width: 50px;
+      height: 3px;
+      margin: 10px auto 0;
+      background-color: #2ecc71;
+      border-radius: 2px;
+    }
+
+    .form-group {
+      position: relative;
+      margin: 2.5rem 0 2rem;
+      text-align: left;
+    }
+
+    .form-group label {
+      position: absolute;
+      top: -0.7rem;
+      left: 1rem;
+      background-color: white;
+      padding: 0 0.5rem;
+      font-size: 0.95rem;
+      font-style: italic;
+      color: #555;
+      z-index: 1;
+    }
+
+    .modal-content input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 1.2rem 1rem 0.6rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-style: italic;
+      color: #333;
+      font-size: 1rem;
+    }
+
+    .modal-content input:focus {
+      outline: none;
+      border-color: #3498db;
+      box-shadow: 0 0 3px #3498db;
+    }
+
+    .modal-content button {
+      padding: 0.8rem 2rem;
+      background-color: #2ecc71;
+      color: white;
+      border: none;
+      border-radius: 16px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      width: 100%;
+    }
+
+    .modal-content button:hover {
+      background-color: #27ae60;
+    }
+
+    .modal-content .button-group {
+      display: flex;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .modal-content .button-group button {
+      flex: 1;
+    }
+
+    .modal-content .button-group button.cancel {
+      background-color: #e74c3c;
+    }
+
+    #feedback {
+      display: none;
+      text-align: center;
+      background-color: #2ecc71;
+      color: white;
+      padding: 0.5rem;
+      margin: 1rem;
+      border-radius: 8px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body oncontextmenu="return false;">
+  <header>
+    Liste des éléments
+    <button style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" title="Options">⋮</button>
+  </header>
+  <div id="feedback">Liste ajoutée !</div>
+
+  <div class="container">
+    <!-- Contenu à venir ici -->
+  </div>
+
+  <button class="fab" title="Ajouter" onclick="openModal()">+</button>
+
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-content">
+      <h2 id="modalTitle">Créer une liste</h2>
+      <div class="form-group">
+        <label for="listName">Nom de la liste</label>
+        <input type="text" id="listName">
+        <ul class="history-list" id="nameHistory"></ul>
+      </div>
+      <div class="form-group">
+        <label for="siteCode">Code du site</label>
+        <input type="text" id="siteCode">
+      </div>
+      <div class="form-group">
+        <label for="entryDate">Date d'entrée</label>
+        <input type="date" id="entryDate">
+      </div>
+      <div class="form-group">
+        <label for="exitDate">Date de sortie</label>
+        <input type="date" id="exitDate">
+      </div>
+      <div class="button-group">
+        <button type="button" onclick="createList()">Créer</button>
+        <button type="button" class="cancel" onclick="closeModal()">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openModal() {
+      const modal = document.getElementById('modal');
+      modal.classList.add('show');
+      modal.style.display = 'flex';
+      document.querySelectorAll('.modal-content input').forEach(i => i.value = '');
+      document.getElementById('listName').addEventListener('focus', showHistory);
+      document.getElementById('listName').addEventListener('blur', () => {
+        setTimeout(() => document.getElementById('nameHistory').style.display = 'none', 100);
+      });
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('modal');
+      modal.classList.remove('show');
+      setTimeout(() => {
+        modal.style.display = 'none';
+      }, 300);
+    }
+
+    function createList() {
+      const listName = document.getElementById('listName').value.trim();
+      const siteCode = document.getElementById('siteCode').value.trim();
+      const entryDate = document.getElementById('entryDate').value;
+      const exitDate = document.getElementById('exitDate').value;
+
+      const container = document.querySelector('.container');
+      const newListItem = document.createElement('div');
+      newListItem.textContent = listName.toUpperCase();
+      newListItem.style.padding = '1rem';
+      newListItem.style.margin = '1rem 0';
+      newListItem.style.background = '#ecf0f1';
+      newListItem.style.borderRadius = '8px';
+      newListItem.style.fontWeight = 'bold';
+      container.appendChild(newListItem);
+
+      let history = JSON.parse(localStorage.getItem('listNameHistory')) || [];
+      if (!history.includes(listName)) {
+        history.push(listName);
+        localStorage.setItem('listNameHistory', JSON.stringify(history));
+      }
+
+      const feedback = document.getElementById('feedback');
+      feedback.style.display = 'block';
+      setTimeout(() => feedback.style.display = 'none', 2000);
+      closeModal();
+    }
+
+    function showHistory() {
+      const input = document.getElementById('listName');
+      const historyList = document.getElementById('nameHistory');
+      const history = JSON.parse(localStorage.getItem('listNameHistory')) || [];
+      historyList.innerHTML = '';
+      history.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        li.onclick = () => input.value = item;
+        historyList.appendChild(li);
+      });
+      if (history.length > 0) {
+        historyList.style.display = 'block';
+      }
+    }
+
+    window.onclick = function(event) {
+      const modal = document.getElementById('modal');
+      if (event.target === modal) {
+        closeModal();
+      }
+    }
+  </script>
+</body>
+</html>
