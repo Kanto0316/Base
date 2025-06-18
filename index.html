@@ -21,10 +21,18 @@
 
       .history-list li {
         display: flex;
-        justify-content: space-between;
         align-items: center;
         padding: 0.5rem 1rem;
         cursor: pointer;
+        position: relative;
+      }
+      .history-list li button {
+        position: absolute;
+        right: 1rem;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #e74c3c;
       }
 
     .history-list li:hover {
@@ -139,7 +147,7 @@
       z-index: 1;
     }
 
-    .modal-content input {
+    .form-group input {
       width: 100%;
       box-sizing: border-box;
       padding: 1.2rem 1rem 0.6rem;
@@ -150,7 +158,7 @@
       font-size: 1rem;
     }
 
-    .modal-content input:focus {
+    .form-group input:focus {
       outline: none;
       border-color: #3498db;
       box-shadow: 0 0 3px #3498db;
@@ -202,6 +210,11 @@
   <header>
     Liste des éléments
     <button style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" title="Options">⋮</button>
+    <div class="form-group search-group" style="max-width: 380px; margin: 1rem auto 0;">
+      <label for="quickSearch">Recherche</label>
+      <input type="text" id="quickSearch" autocomplete="off">
+      <ul class="history-list" id="searchHistoryList"></ul>
+    </div>
   </header>
   <div id="feedback">Liste ajoutée !</div>
 
@@ -303,11 +316,12 @@
     }
 
     function showGenericHistory(inputId, filter = '') {
-      const mapping = {listName: 'nameHistory', siteCode: 'codeHistory'};
+      const mapping = {listName: 'nameHistory', siteCode: 'codeHistory', quickSearch: 'searchHistoryList'};
+      const keyMapping = {quickSearch: 'searchHistory'};
       const listId = mapping[inputId] || inputId + 'History';
       const input = document.getElementById(inputId);
       const historyList = document.getElementById(listId);
-      const key = inputId + 'History';
+      const key = keyMapping[inputId] || inputId + 'History';
       let history = JSON.parse(localStorage.getItem(key)) || [];
       history = history.map(h => h.trim()).filter(h => h !== '');
       localStorage.setItem(key, JSON.stringify(history));
@@ -324,6 +338,9 @@
           btn.style.background = 'none';
           btn.style.border = 'none';
           btn.style.cursor = 'pointer';
+          btn.style.position = 'absolute';
+          btn.style.right = '1rem';
+          btn.style.color = '#e74c3c';
           btn.onclick = (e) => {
             e.stopPropagation();
             history.splice(index, 1);
@@ -354,6 +371,15 @@
       const input = document.getElementById('siteCode');
       showGenericHistory('siteCode', input.value);
     }
+
+    const quick = document.getElementById('quickSearch');
+    quick.addEventListener('input', (e) => showGenericHistory('quickSearch', e.target.value));
+    quick.addEventListener('blur', () => {
+      setTimeout(() => {
+        const list = document.getElementById('searchHistoryList');
+        if (list) list.style.display = 'none';
+      }, 100);
+    });
 
     window.onclick = function(event) {
       const modal = document.getElementById('modal');
