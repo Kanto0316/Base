@@ -219,6 +219,7 @@
       <div class="form-group">
         <label for="siteCode">Code du site</label>
         <input type="text" id="siteCode">
+        <ul class="history-list" id="codeHistory"></ul>
       </div>
       <div class="form-group">
         <label for="entryDate">Date d'entrée</label>
@@ -244,6 +245,10 @@
       document.getElementById('listName').addEventListener('focus', showHistory);
       document.getElementById('listName').addEventListener('blur', () => {
         setTimeout(() => document.getElementById('nameHistory').style.display = 'none', 100);
+      });
+      document.getElementById('siteCode').addEventListener('focus', showCodeHistory);
+      document.getElementById('siteCode').addEventListener('blur', () => {
+        setTimeout(() => document.getElementById('codeHistory').style.display = 'none', 100);
       });
     }
 
@@ -277,6 +282,12 @@
         localStorage.setItem('listNameHistory', JSON.stringify(history));
       }
 
+      let codeHistory = JSON.parse(localStorage.getItem('siteCodeHistory')) || [];
+      if (siteCode && !codeHistory.includes(siteCode)) {
+        codeHistory.push(siteCode);
+        localStorage.setItem('siteCodeHistory', JSON.stringify(codeHistory));
+      }
+
       const feedback = document.getElementById('feedback');
       feedback.style.display = 'block';
       setTimeout(() => feedback.style.display = 'none', 2000);
@@ -287,6 +298,22 @@
       const input = document.getElementById('listName');
       const historyList = document.getElementById('nameHistory');
       const history = JSON.parse(localStorage.getItem('listNameHistory')) || [];
+      historyList.innerHTML = '';
+      history.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        li.onclick = () => input.value = item;
+        historyList.appendChild(li);
+      });
+      if (history.length > 0) {
+        historyList.style.display = 'block';
+      }
+    }
+
+    function showCodeHistory() {
+      const input = document.getElementById('siteCode');
+      const historyList = document.getElementById('codeHistory');
+      const history = JSON.parse(localStorage.getItem('siteCodeHistory')) || [];
       historyList.innerHTML = '';
       history.forEach(item => {
         const li = document.createElement('li');
