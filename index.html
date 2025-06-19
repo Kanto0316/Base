@@ -576,7 +576,7 @@
     back.style.color = 'white';
     back.style.fontSize = '1.5rem';
     back.style.cursor = 'pointer';
-    back.onclick = hideDetail;
+    back.onclick = () => window.history.back();
     header.appendChild(back);
     const title = document.createElement('span');
     let { name, code, entryDate, exitDate } = element.dataset;
@@ -656,6 +656,18 @@
     detailView.style.display = 'block';
     mainView.style.display = 'none';
     requestAnimationFrame(() => detailView.classList.add('show'));
+
+    localStorage.setItem('currentPage', 'detail');
+    localStorage.setItem('currentListName', name);
+    window.history.pushState({page: 'detail', name}, '', '#detailView');
+  }
+
+  function showDetailView(name) {
+    const items = document.querySelectorAll('#mainView .container > div');
+    const el = Array.from(items).find(d => d.dataset.name === name);
+    if (el) {
+      showDetail(el);
+    }
   }
 
   function hideDetail() {
@@ -668,6 +680,8 @@
       detailView.style.display = 'none';
     }, 400);
     mainView.style.display = 'block';
+    localStorage.setItem('currentPage', 'main');
+    localStorage.removeItem('currentListName');
   }
 
   function openActionModal(index) {
@@ -1154,7 +1168,13 @@
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    window.history.replaceState({page: 'main'}, '', '#');
     displayElements();
+    const page = localStorage.getItem('currentPage');
+    const listName = localStorage.getItem('currentListName');
+    if (page === 'detail' && listName) {
+      showDetailView(listName);
+    }
     const select = document.getElementById('storeSelect');
     if (select) {
       select.addEventListener('change', () => {
@@ -1171,6 +1191,13 @@
     }
     updateCustomStoreVisibility();
     updateExportVisibility();
+  });
+
+  window.addEventListener('popstate', () => {
+    const detail = document.getElementById('detailView');
+    if (detail && detail.style.display === 'block') {
+      hideDetail();
+    }
   });
   </script>
 </body>
