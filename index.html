@@ -637,6 +637,79 @@
   }
 
   function addDetailItem() {
+    const designation = document.getElementById('designation').value.trim();
+    const qtyBtrs = document.getElementById('qtyBtrs').value.trim();
+    const qtyReturn = document.getElementById('qtyReturn').value.trim();
+    const storeSelect = document.getElementById('storeSelect').value;
+    const customStore = document.getElementById('customStore').value.trim();
+    const store = storeSelect === 'autre' ? customStore : storeSelect;
+    const remark = document.getElementById('remark').value.trim();
+
+    const spans = document.querySelectorAll('#detailResult span');
+    const siteName = spans[0] ? spans[0].textContent.trim() : '';
+    const siteCode = spans[1] ? spans[1].textContent.trim() : '';
+    const entryDate = spans[2] ? spans[2].textContent.trim() : '';
+    const exitDate = spans[3] ? spans[3].textContent.trim() : '';
+
+    const values = [
+      siteCode,
+      siteName,
+      designation,
+      qtyBtrs,
+      qtyReturn,
+      store,
+      remark,
+      entryDate,
+      exitDate
+    ];
+
+    let table = document.getElementById('detailTable');
+    if (!table) {
+      table = document.createElement('table');
+      table.id = 'detailTable';
+      table.style.borderCollapse = 'collapse';
+      table.style.marginTop = '1rem';
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      const headers = [
+        'Code du site',
+        'Nom de site',
+        'Désignation',
+        'Qté BTRS',
+        'Qté retourner',
+        'Magasin',
+        'Remarque',
+        "Date d'entrée site",
+        "Date de sortie site"
+      ];
+      headers.forEach(text => {
+        const th = document.createElement('th');
+        th.textContent = text;
+        th.style.backgroundColor = '#f2f2f2';
+        th.style.fontWeight = 'bold';
+        th.style.textAlign = 'center';
+        th.style.border = '1px solid #ccc';
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      table.appendChild(tbody);
+      const detailView = document.getElementById('detailView');
+      detailView.appendChild(table);
+    }
+
+    const tbody = table.querySelector('tbody');
+    const row = document.createElement('tr');
+    values.forEach(val => {
+      const td = document.createElement('td');
+      td.textContent = val ? val : 'null';
+      td.style.border = '1px solid #ccc';
+      if (!val) td.style.color = '#777';
+      row.appendChild(td);
+    });
+    tbody.appendChild(row);
+
     closeAddDetailModal();
   }
 
