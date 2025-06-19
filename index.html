@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Liste des éléments</title>
   <style>
     .history-list {
@@ -227,47 +227,14 @@
       background-color: #bdc3c7;
     }
 
-    /* Popup menu styles */
-    .popup-menu {
-      position: absolute;
-      top: 50%;
-      left: 100%;
-      transform: translateY(-50%);
-      margin-left: 10px;
-      background: #fff;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      border-radius: 8px;
-      padding: 0.5rem;
-      z-index: 1000;
-      display: none;
-    }
-
-    .popup-menu button {
-      display: block;
-      width: 100%;
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      padding: 0.4rem 1rem;
-      margin: 0.2rem 0;
-      cursor: pointer;
-    }
-
-    .popup-menu button.edit {
-      background-color: #3498db;
-    }
-
-    .popup-menu button.delete {
+    .modal-content button.cancel {
       background-color: #e74c3c;
     }
 
-    .popup-menu button.export {
-      background-color: #2ecc71;
-    }
-
-    .popup-menu button.gray {
+    .modal-content button.gray {
       background-color: #bdc3c7;
     }
+
 
     #feedback {
       display: none;
@@ -438,11 +405,6 @@
     </div>
   </div>
 
-  <div id="popupMenu" class="popup-menu">
-    <button class="edit" onclick="openEditModal()">Modifier</button>
-    <button class="delete" onclick="openDeleteModal()">Supprimer</button>
-    <button class="export" onclick="closeContextMenu()">Exporter</button>
-  </div>
 
   <div class="modal" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
     <div class="modal-content">
@@ -462,6 +424,14 @@
         <button type="button" class="cancel" onclick="confirmDelete()">OK</button>
         <button type="button" class="gray" onclick="closeDeleteModal()">Annuler</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal" id="actionModal" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <button type="button" onclick="openEditModal()">Modifier</button>
+      <button type="button" class="cancel" onclick="openDeleteModal()">Supprimer</button>
+      <button type="button" onclick="exportTableData()">Exporter</button>
     </div>
   </div>
 
@@ -700,32 +670,27 @@
     mainView.style.display = 'block';
   }
 
-  function openContextMenu(event, index) {
-    event.stopPropagation();
-    closeContextMenu();
-    const menu = document.getElementById('popupMenu');
-    event.target.parentElement.appendChild(menu);
-    menu.dataset.index = index;
-    menu.style.display = 'block';
-    setTimeout(() => document.addEventListener('click', closeContextMenuOnClick));
+  function openActionModal(index) {
+    const modal = document.getElementById('actionModal');
+    if (!modal) return;
+    modal.dataset.index = index;
+    modal.classList.add('show');
+    modal.style.display = 'flex';
   }
 
-  function closeContextMenu() {
-    const menu = document.getElementById('popupMenu');
-    menu.style.display = 'none';
-    document.body.appendChild(menu);
-    document.removeEventListener('click', closeContextMenuOnClick);
+  function closeActionModal() {
+    const modal = document.getElementById('actionModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    setTimeout(() => { modal.style.display = 'none'; }, 300);
   }
 
-  function closeContextMenuOnClick(e) {
-    const menu = document.getElementById('popupMenu');
-    if (!menu.contains(e.target)) {
-      closeContextMenu();
+
+  function openEditModal(index) {
+    if (index === undefined) {
+      const a = document.getElementById('actionModal');
+      index = a ? a.dataset.index : undefined;
     }
-  }
-
-  function openEditModal() {
-    const index = document.getElementById('popupMenu').dataset.index;
     const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
     const item = elements[index];
     if (!item) return;
@@ -734,7 +699,7 @@
     modal.dataset.index = index;
     modal.classList.add('show');
     modal.style.display = 'flex';
-    closeContextMenu();
+    closeActionModal();
   }
 
   function saveEdit() {
@@ -755,13 +720,16 @@
     setTimeout(() => { modal.style.display = 'none'; }, 300);
   }
 
-  function openDeleteModal() {
-    const index = document.getElementById('popupMenu').dataset.index;
+  function openDeleteModal(index) {
+    if (index === undefined) {
+      const a = document.getElementById('actionModal');
+      index = a ? a.dataset.index : undefined;
+    }
     const modal = document.getElementById('deleteModal');
     modal.dataset.index = index;
     modal.classList.add('show');
     modal.style.display = 'flex';
-    closeContextMenu();
+    closeActionModal();
   }
 
   function confirmDelete() {
@@ -962,8 +930,8 @@
     editBtn.style.fontSize = '0.9rem';
     editBtn.style.cursor = 'pointer';
     editBtn.dataset.index = index;
-    editBtn.onclick = (e) => {
-      openContextMenu(e, index);
+    editBtn.onclick = () => {
+      openActionModal(index);
     };
     newListItem.appendChild(editBtn);
     newListItem.dataset.name = item.listName || '';
@@ -1159,6 +1127,7 @@
     const modal = document.getElementById('modal');
     const addDetail = document.getElementById('addDetailModal');
     const delRows = document.getElementById('deleteRowsModal');
+    const action = document.getElementById('actionModal');
     if (event.target === modal) {
       closeModal();
     }
@@ -1167,6 +1136,9 @@
     }
     if (event.target === delRows) {
       closeDeleteRowsModal();
+    }
+    if (event.target === action) {
+      closeActionModal();
     }
   }
 
