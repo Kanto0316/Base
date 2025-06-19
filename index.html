@@ -359,6 +359,12 @@
       text-align: center;
       text-transform: uppercase;
     }
+
+    .table-wrapper {
+      overflow-x: auto;
+      max-width: 100%;
+      padding-bottom: 1rem;
+    }
   </style>
 </head>
 <body oncontextmenu="return false;">
@@ -601,6 +607,8 @@
     detailView.dataset.tableKey = key;
     const existingTable = document.getElementById('detailTable');
     if (existingTable) existingTable.remove();
+    const existingWrapper = detailView.querySelector('.table-wrapper');
+    if (existingWrapper) existingWrapper.remove();
     const savedRows = JSON.parse(localStorage.getItem(key)) || [];
     if (savedRows.length > 0) {
       const table = createDetailTable();
@@ -627,7 +635,10 @@
         });
         tbody.appendChild(row);
       });
-      detailView.appendChild(table);
+      const wrapper = document.createElement('div');
+      wrapper.className = 'table-wrapper';
+      wrapper.appendChild(table);
+      detailView.appendChild(wrapper);
     }
 
     const float = document.getElementById('floatingButtons');
@@ -801,10 +812,16 @@
     ];
 
     let table = document.getElementById('detailTable');
+    let wrapper = document.querySelector('#detailView .table-wrapper');
     if (!table) {
       table = createDetailTable();
       const detailView = document.getElementById('detailView');
-      detailView.appendChild(table);
+      if (!wrapper) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'table-wrapper';
+        detailView.appendChild(wrapper);
+      }
+      wrapper.appendChild(table);
     }
 
     const tbody = table.querySelector('tbody');
