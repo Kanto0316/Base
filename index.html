@@ -986,11 +986,16 @@
     }
   }
 
+  function getCsvSeparator() {
+    const sample = (1.1).toLocaleString();
+    return sample.includes(',') ? ';' : ',';
+  }
+
   function exportTableData() {
     const table = document.querySelector('#detailView table');
     if (!table) return;
 
-    const sep = ';';
+    const sep = getCsvSeparator();
     const lines = [];
 
     const headers = Array.from(table.querySelectorAll('thead th'))
@@ -1004,6 +1009,7 @@
       const line = cells.map(td => {
         let val = td.textContent.trim();
         if (!val || val === '-' || val.toLowerCase() === 'null') val = '-';
+        val = val.replace(/[\r\n]+/g, ' ');
         return '"' + val.toUpperCase().replace(/"/g, '""') + '"';
       }).join(sep);
       lines.push(line);
@@ -1022,6 +1028,7 @@
     link.href = URL.createObjectURL(blob);
     link.download = filename;
     link.click();
+    alert('Pour une meilleure lisibilité, appliquez un style gris clair à la première ligne dans Excel.');
   }
 
   document.getElementById('exportBtn').onclick = exportTableData;
