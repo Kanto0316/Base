@@ -753,11 +753,13 @@
     const group = document.getElementById('customStoreGroup');
     const input = document.getElementById('customStore');
     if (!select || !group || !input) return;
+    localStorage.setItem('dernierMagasin', select.value);
     if (select.value === 'autre') {
       group.style.display = 'block';
     } else {
       group.style.display = 'none';
       input.value = '';
+      localStorage.removeItem('dernierMagasinAutre');
     }
   }
 
@@ -765,8 +767,17 @@
     const modal = document.getElementById('addDetailModal');
     modal.classList.add('show');
     modal.style.display = 'flex';
-    document.querySelectorAll('#addDetailModal input, #addDetailModal select').forEach(el => el.value = '');
+    document.querySelectorAll('#addDetailModal input').forEach(el => el.value = '');
+    document.querySelectorAll('#addDetailModal select').forEach(el => el.value = '');
+    const select = document.getElementById('storeSelect');
+    const custom = document.getElementById('customStore');
+    const last = localStorage.getItem('dernierMagasin');
+    if (select && last) select.value = last;
     updateCustomStoreVisibility();
+    if (select && select.value === 'autre' && custom) {
+      const other = localStorage.getItem('dernierMagasinAutre');
+      if (other) custom.value = other;
+    }
   }
 
   function closeAddDetailModal() {
@@ -776,13 +787,13 @@
   }
 
   function addDetailItem() {
-    const designation = document.getElementById('designation').value.trim();
-    const qtyBtrs = document.getElementById('qtyBtrs').value.trim();
-    const qtyReturn = document.getElementById('qtyReturn').value.trim();
+    const designation = document.getElementById('designation').value.trim().toUpperCase();
+    const qtyBtrs = document.getElementById('qtyBtrs').value.trim().toUpperCase();
+    const qtyReturn = document.getElementById('qtyReturn').value.trim().toUpperCase();
     const storeSelect = document.getElementById('storeSelect').value;
-    const customStore = document.getElementById('customStore').value.trim();
-    const store = storeSelect === 'autre' ? customStore : storeSelect;
-    const remark = document.getElementById('remark').value.trim();
+    const customStore = document.getElementById('customStore').value.trim().toUpperCase();
+    const store = (storeSelect === 'autre' ? customStore : storeSelect).toUpperCase();
+    const remark = document.getElementById('remark').value.trim().toUpperCase();
 
     const spans = document.querySelectorAll('#detailResult span');
     const siteName = spans[0] ? spans[0].textContent.trim() : '';
@@ -1145,7 +1156,19 @@
   document.addEventListener('DOMContentLoaded', () => {
     displayElements();
     const select = document.getElementById('storeSelect');
-    if (select) select.addEventListener('change', updateCustomStoreVisibility);
+    if (select) {
+      select.addEventListener('change', () => {
+        updateCustomStoreVisibility();
+      });
+    }
+    const custom = document.getElementById('customStore');
+    if (custom && select) {
+      custom.addEventListener('input', () => {
+        if (select.value === 'autre') {
+          localStorage.setItem('dernierMagasinAutre', custom.value);
+        }
+      });
+    }
     updateCustomStoreVisibility();
     updateExportVisibility();
   });
