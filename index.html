@@ -286,6 +286,10 @@
     #detailContent {
       padding-top: 80px;
     }
+
+    #detailResult {
+      padding-top: 100px;
+    }
   </style>
 </head>
 <body oncontextmenu="return false;">
@@ -398,7 +402,7 @@
     }, 300);
   }
 
-  function showDetail(name) {
+  function showDetail(element) {
     const detailView = document.getElementById('detailView');
     const mainView = document.getElementById('mainView');
     const header = document.getElementById('detailHeader');
@@ -418,18 +422,24 @@
     back.onclick = hideDetail;
     header.appendChild(back);
     const title = document.createElement('span');
+    let { name, code, entryDate, exitDate } = element.dataset;
+    if (!code || !entryDate || !exitDate) {
+      const items = JSON.parse(localStorage.getItem('listeElements')) || [];
+      const found = items.find(el => el.listName === name) || {};
+      code = code || found.siteCode;
+      entryDate = entryDate || found.entryDate;
+      exitDate = exitDate || found.exitDate;
+    }
     title.textContent = name;
     header.appendChild(title);
 
     const detailResult = document.getElementById('detailResult');
-    const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
-    const item = elements.find(el => el.listName === name) || {};
     const format = v => v ? v : 'Null';
     detailResult.innerHTML =
-      `<div><strong style="color:#000;">Nom du site :</strong> <span style="color:#777;">${format(item.listName)}</span></div>` +
-      `<div><strong style="color:#000;">Code du site :</strong> <span style="color:#777;">${format(item.siteCode)}</span></div>` +
-      `<div><strong style="color:#000;">Date d'entrée site :</strong> <span style="color:#777;">${format(item.entryDate)}</span></div>` +
-      `<div><strong style="color:#000;">Date de sortie site :</strong> <span style="color:#777;">${format(item.exitDate)}</span></div>`;
+      `<div><strong style="color:#000;">Nom du site :</strong> <span style="color:#777;">${format(name)}</span></div>` +
+      `<div><strong style="color:#000;">Code du site :</strong> <span style="color:#777;">${format(code)}</span></div>` +
+      `<div><strong style="color:#000;">Date d'entrée site :</strong> <span style="color:#777;">${format(entryDate)}</span></div>` +
+      `<div><strong style="color:#000;">Date de sortie site :</strong> <span style="color:#777;">${format(exitDate)}</span></div>`;
     detailView.style.display = 'block';
     mainView.style.display = 'none';
     requestAnimationFrame(() => detailView.classList.add('show'));
@@ -547,7 +557,11 @@
       openContextMenu(e, index);
     };
     newListItem.appendChild(editBtn);
-    newListItem.onclick = () => showDetail(item.listName);
+    newListItem.dataset.name = item.listName || '';
+    newListItem.dataset.code = item.siteCode || '';
+    newListItem.dataset.entryDate = item.entryDate || '';
+    newListItem.dataset.exitDate = item.exitDate || '';
+    newListItem.onclick = () => showDetail(newListItem);
     container.insertBefore(newListItem, msg);
   }
 
