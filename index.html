@@ -989,20 +989,38 @@
   function exportTableData() {
     const table = document.querySelector('#detailView table');
     if (!table) return;
-    const rows = Array.from(table.querySelectorAll('tbody tr')).filter(r => r.style.display !== 'none');
-    let csv = '';
+
+    const sep = ';';
+    const lines = [];
+
+    const headers = Array.from(table.querySelectorAll('thead th'))
+      .map(th => '"' + th.textContent.trim().toUpperCase().replace(/"/g, '""') + '"');
+    lines.push(headers.join(sep));
+
+    const rows = Array.from(table.querySelectorAll('tbody tr'))
+      .filter(r => r.style.display !== 'none');
     rows.forEach(row => {
-      const cells = row.querySelectorAll('td');
-      const line = Array.from(cells).map(td => '"' + td.textContent.trim().replace(/"/g, '""') + '"').join(';');
-      csv += line + '\n';
+      const cells = Array.from(row.querySelectorAll('td'));
+      const line = cells.map(td => {
+        let val = td.textContent.trim();
+        if (!val || val === '-' || val.toLowerCase() === 'null') val = '-';
+        return '"' + val.toUpperCase().replace(/"/g, '""') + '"';
+      }).join(sep);
+      lines.push(line);
     });
+
+    const csv = lines.join('\n');
+    const bom = '\uFEFF';
+
     const spans = document.querySelectorAll('#detailResult span');
     const name = spans[0] ? spans[0].textContent.trim() : 'liste';
     const code = spans[1] ? spans[1].textContent.trim() : 'site';
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const filename = `${code}_${name}`.replace(/\s+/g, '').toUpperCase() + '.csv';
+
+    const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${code}_${name}.csv`;
+    link.download = filename;
     link.click();
   }
 
