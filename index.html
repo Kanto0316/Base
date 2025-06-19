@@ -285,13 +285,41 @@
       });
     }
 
-    function closeModal() {
-      const modal = document.getElementById('modal');
-      modal.classList.remove('show');
-      setTimeout(() => {
-        modal.style.display = 'none';
-      }, 300);
-    }
+  function closeModal() {
+    const modal = document.getElementById('modal');
+    modal.classList.remove('show');
+    setTimeout(() => {
+      modal.style.display = 'none';
+    }, 300);
+  }
+
+  function addElementToDOM(item) {
+    const container = document.querySelector('.container');
+    const msg = document.getElementById('noResultsMessage');
+    const newListItem = document.createElement('div');
+    newListItem.textContent = item.listName.toUpperCase();
+    newListItem.style.padding = '1rem';
+    newListItem.style.margin = '1rem 0';
+    newListItem.style.background = '#ecf0f1';
+    newListItem.style.borderRadius = '8px';
+    newListItem.style.fontWeight = 'bold';
+    newListItem.style.position = 'relative';
+    const editBtn = document.createElement('span');
+    editBtn.textContent = '✎';
+    editBtn.style.position = 'absolute';
+    editBtn.style.right = '0.5rem';
+    editBtn.style.fontSize = '0.9rem';
+    editBtn.style.cursor = 'pointer';
+    newListItem.appendChild(editBtn);
+    container.insertBefore(newListItem, msg);
+  }
+
+  function displayElements() {
+    document.querySelectorAll('.container > div:not(#noResultsMessage)').forEach(el => el.remove());
+    const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
+    elements.forEach(addElementToDOM);
+    filterDisplayedLists();
+  }
 
     function createList() {
       const listName = document.getElementById('listName').value.trim();
@@ -299,17 +327,11 @@
       const entryDate = document.getElementById('entryDate').value;
       const exitDate = document.getElementById('exitDate').value;
 
-      const container = document.querySelector('.container');
-      const msg = document.getElementById('noResultsMessage');
-      const newListItem = document.createElement('div');
-      newListItem.textContent = listName.toUpperCase();
-      newListItem.style.padding = '1rem';
-      newListItem.style.margin = '1rem 0';
-      newListItem.style.background = '#ecf0f1';
-      newListItem.style.borderRadius = '8px';
-      newListItem.style.fontWeight = 'bold';
-      container.insertBefore(newListItem, msg);
-      filterDisplayedLists();
+      const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
+      elements.push({ listName, siteCode, entryDate, exitDate });
+      localStorage.setItem('listeElements', JSON.stringify(elements));
+
+      displayElements();
 
       let history = JSON.parse(localStorage.getItem('listNameHistory')) || [];
       if (!history.includes(listName)) {
@@ -418,12 +440,14 @@
       }, 100);
     });
 
-    window.onclick = function(event) {
-      const modal = document.getElementById('modal');
-      if (event.target === modal) {
-        closeModal();
-      }
+  window.onclick = function(event) {
+    const modal = document.getElementById('modal');
+    if (event.target === modal) {
+      closeModal();
     }
+  }
+
+  document.addEventListener('DOMContentLoaded', displayElements);
   </script>
 </body>
 </html>
