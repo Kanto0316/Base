@@ -427,7 +427,12 @@
         <select id="storeSelect">
           <option value="TiTan 1">TiTan 1</option>
           <option value="Hag 36">Hag 36</option>
+          <option value="autre">Autre</option>
         </select>
+      </div>
+      <div class="form-group" id="customStoreGroup" style="display:none">
+        <label for="customStore">Magasin</label>
+        <input type="text" id="customStore">
       </div>
       <div class="form-group">
         <label for="remark">Remarque</label>
@@ -604,11 +609,25 @@
     setTimeout(() => { modal.style.display = 'none'; }, 300);
   }
 
+  function updateCustomStoreVisibility() {
+    const select = document.getElementById('storeSelect');
+    const group = document.getElementById('customStoreGroup');
+    const input = document.getElementById('customStore');
+    if (!select || !group || !input) return;
+    if (select.value === 'autre') {
+      group.style.display = 'block';
+    } else {
+      group.style.display = 'none';
+      input.value = '';
+    }
+  }
+
   function openAddDetailModal() {
     const modal = document.getElementById('addDetailModal');
     modal.classList.add('show');
     modal.style.display = 'flex';
     document.querySelectorAll('#addDetailModal input, #addDetailModal select').forEach(el => el.value = '');
+    updateCustomStoreVisibility();
   }
 
   function closeAddDetailModal() {
@@ -788,7 +807,12 @@
     }
   }
 
-  document.addEventListener('DOMContentLoaded', displayElements);
+  document.addEventListener('DOMContentLoaded', () => {
+    displayElements();
+    const select = document.getElementById('storeSelect');
+    if (select) select.addEventListener('change', updateCustomStoreVisibility);
+    updateCustomStoreVisibility();
+  });
   </script>
 </body>
 </html>
