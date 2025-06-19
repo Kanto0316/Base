@@ -301,21 +301,6 @@
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 
-    .detail-add-btn {
-      position: absolute;
-      right: 1rem;
-      top: 50%;
-      transform: translateY(-50%);
-      background-color: #3498db;
-      color: #fff;
-      border: none;
-      border-radius: 50%;
-      width: 2rem;
-      height: 2rem;
-      font-size: 1.2rem;
-      line-height: 1rem;
-      cursor: pointer;
-    }
 
     #detailContent {
       padding-top: 80px;
@@ -323,6 +308,45 @@
 
     #detailResult {
       padding-top: 100px;
+    }
+
+    #floatingButtons {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1000;
+    }
+
+    #floatingButtons button {
+      width: 56px;
+      height: 56px;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      font-size: 2rem;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      transition: background-color 0.3s ease;
+    }
+
+    #floatingButtons button#addDetailBtn {
+      background-color: #3498db;
+    }
+
+    #floatingButtons button#addDetailBtn:hover {
+      background-color: #2980b9;
+    }
+
+    #floatingButtons button#exportBtn {
+      background-color: #2ecc71;
+      font-size: 1rem;
+    }
+
+    #floatingButtons button#exportBtn:hover {
+      background-color: #27ae60;
     }
 
     /* Style for detail table cells */
@@ -361,6 +385,10 @@
     <header id="detailHeader"></header>
     <div id="detailResult"></div>
     <div id="detailContent"></div>
+    <div id="floatingButtons" style="display:none;">
+      <button id="exportBtn">Exporter</button>
+      <button id="addDetailBtn" title="Ajouter" onclick="openAddDetailModal()">+</button>
+    </div>
   </div>
 
   <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -560,11 +588,6 @@
     }
     title.textContent = name;
     header.appendChild(title);
-    const addBtn = document.createElement('button');
-    addBtn.textContent = '+';
-    addBtn.className = 'detail-add-btn';
-    addBtn.onclick = openAddDetailModal;
-    header.appendChild(addBtn);
 
     const detailResult = document.getElementById('detailResult');
     const format = v => v ? v : 'Null';
@@ -607,6 +630,10 @@
       detailView.appendChild(table);
     }
 
+    const float = document.getElementById('floatingButtons');
+    float.style.display = 'flex';
+    updateExportVisibility();
+
     detailView.style.display = 'block';
     mainView.style.display = 'none';
     requestAnimationFrame(() => detailView.classList.add('show'));
@@ -615,6 +642,7 @@
   function hideDetail() {
     const detailView = document.getElementById('detailView');
     const mainView = document.getElementById('mainView');
+    document.getElementById('floatingButtons').style.display = 'none';
     detailView.classList.remove('show');
     setTimeout(() => {
       detailView.style.display = 'none';
@@ -791,6 +819,7 @@
     tbody.appendChild(row);
 
     closeAddDetailModal();
+    updateExportVisibility();
   }
 
   function addElementToDOM(item, index) {
@@ -917,7 +946,7 @@
       showGenericHistory('siteCode', input.value);
     }
 
-    function filterDisplayedLists() {
+  function filterDisplayedLists() {
       const value = document.getElementById('quickSearch').value.trim().toUpperCase();
       const items = document.querySelectorAll('.container > div:not(#noResultsMessage)');
       let anyVisible = false;
@@ -949,6 +978,36 @@
       }, 100);
     });
 
+  function updateExportVisibility() {
+    const exportBtn = document.getElementById('exportBtn');
+    const table = document.querySelector('#detailView table');
+    if (exportBtn) {
+      exportBtn.style.display = table ? 'block' : 'none';
+    }
+  }
+
+  function exportTableData() {
+    const table = document.querySelector('#detailView table');
+    if (!table) return;
+    const rows = Array.from(table.querySelectorAll('tbody tr')).filter(r => r.style.display !== 'none');
+    let csv = '';
+    rows.forEach(row => {
+      const cells = row.querySelectorAll('td');
+      const line = Array.from(cells).map(td => '"' + td.textContent.trim().replace(/"/g, '""') + '"').join(';');
+      csv += line + '\n';
+    });
+    const spans = document.querySelectorAll('#detailResult span');
+    const name = spans[0] ? spans[0].textContent.trim() : 'liste';
+    const code = spans[1] ? spans[1].textContent.trim() : 'site';
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${code}_${name}.csv`;
+    link.click();
+  }
+
+  document.getElementById('exportBtn').onclick = exportTableData;
+
   window.onclick = function(event) {
     const modal = document.getElementById('modal');
     const addDetail = document.getElementById('addDetailModal');
@@ -965,6 +1024,7 @@
     const select = document.getElementById('storeSelect');
     if (select) select.addEventListener('change', updateCustomStoreVisibility);
     updateCustomStoreVisibility();
+    updateExportVisibility();
   });
   </script>
 </body>
