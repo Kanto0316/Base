@@ -176,6 +176,24 @@
       box-shadow: 0 0 3px #3498db;
     }
 
+    .form-group select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 1.2rem 1rem 0.6rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-style: italic;
+      color: #333;
+      font-size: 1rem;
+      background: white;
+    }
+
+    .form-group select:focus {
+      outline: none;
+      border-color: #3498db;
+      box-shadow: 0 0 3px #3498db;
+    }
+
     .modal-content button {
       padding: 0.8rem 2rem;
       background-color: #2ecc71;
@@ -389,6 +407,36 @@
     </div>
   </div>
 
+  <div class="modal" id="addDetailModal" role="dialog" aria-modal="true" aria-labelledby="addDetailTitle">
+    <div class="modal-content">
+      <h2 id="addDetailTitle">Ajouter un élément</h2>
+      <div class="form-group">
+        <label for="designation">Désignation</label>
+        <input type="text" id="designation">
+      </div>
+      <div class="form-group">
+        <label for="qtyBtrs">Qté BTRS</label>
+        <input type="text" id="qtyBtrs">
+      </div>
+      <div class="form-group">
+        <label for="qtyReturn">Qté retourner</label>
+        <input type="text" id="qtyReturn">
+      </div>
+      <div class="form-group">
+        <label for="storeSelect">Magasin</label>
+        <select id="storeSelect">
+          <option value="TiTan 1">TiTan 1</option>
+          <option value="Hag 36">Hag 36</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="remark">Remarque</label>
+        <input type="text" id="remark">
+      </div>
+      <button type="button" onclick="addDetailItem()">Ajouter</button>
+    </div>
+  </div>
+
   <script>
     function openModal() {
       const modal = document.getElementById('modal');
@@ -451,6 +499,7 @@
     const addBtn = document.createElement('button');
     addBtn.textContent = '+';
     addBtn.className = 'detail-add-btn';
+    addBtn.onclick = openAddDetailModal;
     header.appendChild(addBtn);
 
     const detailResult = document.getElementById('detailResult');
@@ -553,6 +602,23 @@
     const modal = document.getElementById('deleteModal');
     modal.classList.remove('show');
     setTimeout(() => { modal.style.display = 'none'; }, 300);
+  }
+
+  function openAddDetailModal() {
+    const modal = document.getElementById('addDetailModal');
+    modal.classList.add('show');
+    modal.style.display = 'flex';
+    document.querySelectorAll('#addDetailModal input, #addDetailModal select').forEach(el => el.value = '');
+  }
+
+  function closeAddDetailModal() {
+    const modal = document.getElementById('addDetailModal');
+    modal.classList.remove('show');
+    setTimeout(() => { modal.style.display = 'none'; }, 300);
+  }
+
+  function addDetailItem() {
+    closeAddDetailModal();
   }
 
   function addElementToDOM(item, index) {
@@ -713,8 +779,12 @@
 
   window.onclick = function(event) {
     const modal = document.getElementById('modal');
+    const addDetail = document.getElementById('addDetailModal');
     if (event.target === modal) {
       closeModal();
+    }
+    if (event.target === addDetail) {
+      closeAddDetailModal();
     }
   }
 
