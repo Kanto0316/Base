@@ -471,6 +471,43 @@
     }, 300);
   }
 
+  function getTableKey(name) {
+    return 'tableData_' + name.replace(/\s+/g, '').toLowerCase();
+  }
+
+  function createDetailTable() {
+    const table = document.createElement('table');
+    table.id = 'detailTable';
+    table.style.borderCollapse = 'collapse';
+    table.style.marginTop = '1rem';
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headers = [
+      'Code du site',
+      'Nom de site',
+      'Désignation',
+      'Qté BTRS',
+      'Qté retourner',
+      'Magasin',
+      'Remarque',
+      "Date d'entrée site",
+      "Date de sortie site"
+    ];
+    headers.forEach(text => {
+      const th = document.createElement('th');
+      th.textContent = text;
+      th.style.backgroundColor = '#f2f2f2';
+      th.style.fontWeight = 'bold';
+      th.style.textAlign = 'center';
+      th.style.border = '1px solid #ccc';
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    table.appendChild(document.createElement('tbody'));
+    return table;
+  }
+
   function showDetail(element) {
     const detailView = document.getElementById('detailView');
     const mainView = document.getElementById('mainView');
@@ -514,6 +551,40 @@
       `<div><strong style="color:#000;">Code du site :</strong> <span style="color:#777;">${format(code)}</span></div>` +
       `<div><strong style="color:#000;">Date d'entrée site :</strong> <span style="color:#777;">${format(entryDate)}</span></div>` +
       `<div><strong style="color:#000;">Date de sortie site :</strong> <span style="color:#777;">${format(exitDate)}</span></div>`;
+
+    const key = getTableKey(name);
+    detailView.dataset.tableKey = key;
+    const existingTable = document.getElementById('detailTable');
+    if (existingTable) existingTable.remove();
+    const savedRows = JSON.parse(localStorage.getItem(key)) || [];
+    if (savedRows.length > 0) {
+      const table = createDetailTable();
+      const tbody = table.querySelector('tbody');
+      savedRows.forEach(r => {
+        const values = [
+          r.siteCode,
+          r.siteName,
+          r.designation,
+          r.qtyBtrs,
+          r.qtyReturn,
+          r.store,
+          r.remark,
+          r.entryDate,
+          r.exitDate
+        ];
+        const row = document.createElement('tr');
+        values.forEach(val => {
+          const td = document.createElement('td');
+          td.textContent = val ? val : 'null';
+          td.style.border = '1px solid #ccc';
+          if (!val) td.style.color = '#777';
+          row.appendChild(td);
+        });
+        tbody.appendChild(row);
+      });
+      detailView.appendChild(table);
+    }
+
     detailView.style.display = 'block';
     mainView.style.display = 'none';
     requestAnimationFrame(() => detailView.classList.add('show'));
@@ -651,6 +722,22 @@
     const entryDate = spans[2] ? spans[2].textContent.trim() : '';
     const exitDate = spans[3] ? spans[3].textContent.trim() : '';
 
+    const dataObj = {
+      siteCode,
+      siteName,
+      designation,
+      qtyBtrs,
+      qtyReturn,
+      store,
+      remark,
+      entryDate,
+      exitDate
+    };
+    const key = getTableKey(siteName);
+    const stored = JSON.parse(localStorage.getItem(key)) || [];
+    stored.push(dataObj);
+    localStorage.setItem(key, JSON.stringify(stored));
+
     const values = [
       siteCode,
       siteName,
@@ -665,36 +752,7 @@
 
     let table = document.getElementById('detailTable');
     if (!table) {
-      table = document.createElement('table');
-      table.id = 'detailTable';
-      table.style.borderCollapse = 'collapse';
-      table.style.marginTop = '1rem';
-      const thead = document.createElement('thead');
-      const headerRow = document.createElement('tr');
-      const headers = [
-        'Code du site',
-        'Nom de site',
-        'Désignation',
-        'Qté BTRS',
-        'Qté retourner',
-        'Magasin',
-        'Remarque',
-        "Date d'entrée site",
-        "Date de sortie site"
-      ];
-      headers.forEach(text => {
-        const th = document.createElement('th');
-        th.textContent = text;
-        th.style.backgroundColor = '#f2f2f2';
-        th.style.fontWeight = 'bold';
-        th.style.textAlign = 'center';
-        th.style.border = '1px solid #ccc';
-        headerRow.appendChild(th);
-      });
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-      const tbody = document.createElement('tbody');
-      table.appendChild(tbody);
+      table = createDetailTable();
       const detailView = document.getElementById('detailView');
       detailView.appendChild(table);
     }
