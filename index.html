@@ -336,6 +336,15 @@
       background-color: #3498db;
     }
 
+    #floatingButtons button#deleteRowsBtn {
+      background-color: #e74c3c;
+      font-size: 1rem;
+    }
+
+    #floatingButtons button#deleteRowsBtn:hover {
+      background-color: #c0392b;
+    }
+
     #floatingButtons button#addDetailBtn:hover {
       background-color: #2980b9;
     }
@@ -395,6 +404,7 @@
     <div id="detailResult"></div>
     <div id="detailContent"></div>
     <div id="floatingButtons" style="display:none;">
+      <button id="deleteRowsBtn" title="Supprimer" onclick="openDeleteRowsModal()" style="display:none;">🗑</button>
       <button id="exportBtn">Exporter</button>
       <button id="addDetailBtn" title="Ajouter" onclick="openAddDetailModal()">+</button>
     </div>
@@ -490,6 +500,16 @@
     </div>
   </div>
 
+  <div class="modal" id="deleteRowsModal" role="dialog" aria-modal="true" aria-labelledby="deleteRowsTitle">
+    <div class="modal-content">
+      <h2 id="deleteRowsTitle">Voulez-vous supprimer ?</h2>
+      <div class="button-group">
+        <button type="button" class="cancel" onclick="confirmRowDelete()">OK</button>
+        <button type="button" class="gray" onclick="closeDeleteRowsModal()">Annuler</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function openModal() {
       const modal = document.getElementById('modal');
@@ -543,6 +563,7 @@
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     const headers = [
+      '#',
       'Code du site',
       'Nom de site',
       'Désignation',
@@ -550,7 +571,8 @@
       'Qté retourner',
       'Qté posée',
       'Magasin',
-      'Remarque'
+      'Remarque',
+      'ACTION'
     ];
     headers.forEach(text => {
       const th = document.createElement('th');
@@ -616,7 +638,7 @@
     if (savedRows.length > 0) {
       const table = createDetailTable();
       const tbody = table.querySelector('tbody');
-      savedRows.forEach(r => {
+      savedRows.forEach((r, idx) => {
         const placed = computePlaced(r.qtyBtrs, r.qtyReturn);
         const values = [
           r.siteCode,
@@ -629,6 +651,10 @@
           r.remark
         ];
         const row = document.createElement('tr');
+        const num = document.createElement('td');
+        num.textContent = idx + 1;
+        num.style.border = '1px solid #ccc';
+        row.appendChild(num);
         values.forEach(val => {
           const td = document.createElement('td');
           td.textContent = formatCell(val);
@@ -636,6 +662,13 @@
           if (val === undefined || val === null || val === '') td.style.color = '#777';
           row.appendChild(td);
         });
+        const action = document.createElement('td');
+        action.style.border = '1px solid #ccc';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.onchange = updateDeleteButtonVisibility;
+        action.appendChild(box);
+        row.appendChild(action);
         tbody.appendChild(row);
       });
       const wrapper = document.createElement('div');
@@ -643,6 +676,8 @@
       wrapper.appendChild(table);
       detailView.appendChild(wrapper);
     }
+
+    updateDeleteButtonVisibility();
 
     const float = document.getElementById('floatingButtons');
     float.style.display = 'flex';
@@ -657,6 +692,7 @@
     const detailView = document.getElementById('detailView');
     const mainView = document.getElementById('mainView');
     document.getElementById('floatingButtons').style.display = 'none';
+    updateDeleteButtonVisibility();
     detailView.classList.remove('show');
     setTimeout(() => {
       detailView.style.display = 'none';
@@ -829,6 +865,10 @@
 
     const tbody = table.querySelector('tbody');
     const row = document.createElement('tr');
+    const num = document.createElement('td');
+    num.textContent = tbody.children.length + 1;
+    num.style.border = '1px solid #ccc';
+    row.appendChild(num);
     values.forEach(val => {
       const td = document.createElement('td');
       td.textContent = formatCell(val);
@@ -836,10 +876,72 @@
       if (val === undefined || val === null || val === '') td.style.color = '#777';
       row.appendChild(td);
     });
+    const action = document.createElement('td');
+    action.style.border = '1px solid #ccc';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.onchange = updateDeleteButtonVisibility;
+    action.appendChild(box);
+    row.appendChild(action);
     tbody.appendChild(row);
+
+    updateDeleteButtonVisibility();
 
     closeAddDetailModal();
     updateExportVisibility();
+  }
+
+  function updateRowIndices() {
+    const rows = document.querySelectorAll('#detailTable tbody tr');
+    rows.forEach((tr, i) => {
+      const cell = tr.querySelector('td');
+      if (cell) cell.textContent = i + 1;
+    });
+  }
+
+  function updateDeleteButtonVisibility() {
+    const btn = document.getElementById('deleteRowsBtn');
+    const boxes = document.querySelectorAll('#detailTable tbody input[type="checkbox"]');
+    const any = Array.from(boxes).some(b => b.checked);
+    if (btn) btn.style.display = any ? 'block' : 'none';
+  }
+
+  function openDeleteRowsModal() {
+    const modal = document.getElementById('deleteRowsModal');
+    if (modal) {
+      modal.classList.add('show');
+      modal.style.display = 'flex';
+    }
+  }
+
+  function closeDeleteRowsModal() {
+    const modal = document.getElementById('deleteRowsModal');
+    if (modal) {
+      modal.classList.remove('show');
+      setTimeout(() => { modal.style.display = 'none'; }, 300);
+    }
+  }
+
+  function confirmRowDelete() {
+    const key = document.getElementById('detailView').dataset.tableKey;
+    const tbody = document.querySelector('#detailTable tbody');
+    if (!tbody) return;
+    const stored = JSON.parse(localStorage.getItem(key)) || [];
+    const remaining = [];
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.forEach((tr, idx) => {
+      const box = tr.querySelector('input[type="checkbox"]');
+      if (box && box.checked) {
+        tr.remove();
+      } else {
+        remaining.push(stored[idx]);
+      }
+    });
+    localStorage.setItem(key, JSON.stringify(remaining));
+    updateRowIndices();
+    updateDeleteButtonVisibility();
+    updateExportVisibility();
+    closeDeleteRowsModal();
   }
 
   function addElementToDOM(item, index) {
@@ -1056,11 +1158,15 @@
   window.onclick = function(event) {
     const modal = document.getElementById('modal');
     const addDetail = document.getElementById('addDetailModal');
+    const delRows = document.getElementById('deleteRowsModal');
     if (event.target === modal) {
       closeModal();
     }
     if (event.target === addDetail) {
       closeAddDetailModal();
+    }
+    if (event.target === delRows) {
+      closeDeleteRowsModal();
     }
   }
 
