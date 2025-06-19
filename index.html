@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Liste des éléments</title>
   <style>
     .history-list {
@@ -361,6 +361,9 @@
     }
 
     .table-wrapper {
+      touch-action: manipulation;
+      touch-action: pan-x pan-y;
+      -ms-touch-action: manipulation;
       overflow-x: auto;
       max-width: 100%;
       padding-bottom: 1rem;
