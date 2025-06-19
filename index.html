@@ -202,8 +202,49 @@
       flex: 1;
     }
 
-    .modal-content .button-group button.cancel {
+  .modal-content .button-group button.cancel {
       background-color: #e74c3c;
+    }
+  .modal-content .button-group button.gray {
+      background-color: #bdc3c7;
+    }
+
+    /* Popup menu styles */
+    .popup-menu {
+      position: absolute;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      border-radius: 8px;
+      padding: 0.5rem;
+      z-index: 1000;
+      display: none;
+    }
+
+    .popup-menu button {
+      display: block;
+      width: 100%;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      padding: 0.4rem 1rem;
+      margin: 0.2rem 0;
+      cursor: pointer;
+    }
+
+    .popup-menu button.edit {
+      background-color: #3498db;
+    }
+
+    .popup-menu button.delete {
+      background-color: #e74c3c;
+    }
+
+    .popup-menu button.export {
+      background-color: #2ecc71;
+    }
+
+    .popup-menu button.gray {
+      background-color: #bdc3c7;
     }
 
     #feedback {
@@ -282,6 +323,33 @@
     </div>
   </div>
 
+  <div id="popupMenu" class="popup-menu">
+    <button class="edit" onclick="openEditModal()">Modifier</button>
+    <button class="delete" onclick="openDeleteModal()">Supprimer</button>
+    <button class="export" onclick="closeContextMenu()">Exporter</button>
+  </div>
+
+  <div class="modal" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="modal-content">
+      <h2 id="editTitle">Modifier le nom de la liste</h2>
+      <div class="form-group">
+        <label for="editName">Nom de la liste</label>
+        <input type="text" id="editName">
+      </div>
+      <button type="button" onclick="saveEdit()">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="modal" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+    <div class="modal-content">
+      <h2 id="deleteTitle">Voulez-vous supprimer cette liste ?</h2>
+      <div class="button-group">
+        <button type="button" class="cancel" onclick="confirmDelete()">OK</button>
+        <button type="button" class="gray" onclick="closeDeleteModal()">Annuler</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function openModal() {
       const modal = document.getElementById('modal');
@@ -348,7 +416,88 @@
     mainView.style.display = 'block';
   }
 
-  function addElementToDOM(item) {
+  function openContextMenu(event, index) {
+    event.stopPropagation();
+    closeContextMenu();
+    const menu = document.getElementById('popupMenu');
+    const rect = event.target.getBoundingClientRect();
+    menu.style.top = rect.bottom + window.scrollY + 'px';
+    menu.style.left = rect.left + window.scrollX + 'px';
+    menu.dataset.index = index;
+    menu.style.display = 'block';
+    setTimeout(() => document.addEventListener('click', closeContextMenuOnClick));
+  }
+
+  function closeContextMenu() {
+    const menu = document.getElementById('popupMenu');
+    menu.style.display = 'none';
+    document.removeEventListener('click', closeContextMenuOnClick);
+  }
+
+  function closeContextMenuOnClick(e) {
+    const menu = document.getElementById('popupMenu');
+    if (!menu.contains(e.target)) {
+      closeContextMenu();
+    }
+  }
+
+  function openEditModal() {
+    const index = document.getElementById('popupMenu').dataset.index;
+    const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
+    const item = elements[index];
+    if (!item) return;
+    document.getElementById('editName').value = item.listName;
+    const modal = document.getElementById('editModal');
+    modal.dataset.index = index;
+    modal.classList.add('show');
+    modal.style.display = 'flex';
+    closeContextMenu();
+  }
+
+  function saveEdit() {
+    const modal = document.getElementById('editModal');
+    const index = modal.dataset.index;
+    const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
+    if (elements[index]) {
+      elements[index].listName = document.getElementById('editName').value.trim();
+      localStorage.setItem('listeElements', JSON.stringify(elements));
+    }
+    closeEditModal();
+    displayElements();
+  }
+
+  function closeEditModal() {
+    const modal = document.getElementById('editModal');
+    modal.classList.remove('show');
+    setTimeout(() => { modal.style.display = 'none'; }, 300);
+  }
+
+  function openDeleteModal() {
+    const index = document.getElementById('popupMenu').dataset.index;
+    const modal = document.getElementById('deleteModal');
+    modal.dataset.index = index;
+    modal.classList.add('show');
+    modal.style.display = 'flex';
+    closeContextMenu();
+  }
+
+  function confirmDelete() {
+    const modal = document.getElementById('deleteModal');
+    const index = modal.dataset.index;
+    const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
+    elements.splice(index, 1);
+    localStorage.setItem('listeElements', JSON.stringify(elements));
+    closeDeleteModal();
+    displayElements();
+  }
+
+  function closeDeleteModal() {
+    const modal = document.getElementById('deleteModal');
+    modal.classList.remove('show');
+    setTimeout(() => { modal.style.display = 'none'; }, 300);
+  }
+
+  function addElementToDOM(item, index) {
     const container = document.querySelector('.container');
     const msg = document.getElementById('noResultsMessage');
     const newListItem = document.createElement('div');
@@ -365,6 +514,10 @@
     editBtn.style.right = '0.5rem';
     editBtn.style.fontSize = '0.9rem';
     editBtn.style.cursor = 'pointer';
+    editBtn.dataset.index = index;
+    editBtn.onclick = (e) => {
+      openContextMenu(e, index);
+    };
     newListItem.appendChild(editBtn);
     newListItem.onclick = () => showDetail(item.listName);
     container.insertBefore(newListItem, msg);
@@ -373,7 +526,7 @@
   function displayElements() {
     document.querySelectorAll('.container > div:not(#noResultsMessage)').forEach(el => el.remove());
     const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
-    elements.forEach(addElementToDOM);
+    elements.forEach((el, idx) => addElementToDOM(el, idx));
     filterDisplayedLists();
   }
 
