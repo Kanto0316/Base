@@ -475,11 +475,23 @@
     return 'tableData_' + name.replace(/\s+/g, '').toLowerCase();
   }
 
+  function computePlaced(btrs, ret) {
+    const n1 = parseFloat(btrs);
+    const n2 = parseFloat(ret);
+    return !isNaN(n1) && !isNaN(n2) ? n1 - n2 : '-';
+  }
+
+  function formatCell(val) {
+    return val === undefined || val === null || val === '' ? '-' : val;
+  }
+
   function createDetailTable() {
     const table = document.createElement('table');
     table.id = 'detailTable';
     table.style.borderCollapse = 'collapse';
-    table.style.marginTop = '1rem';
+    table.style.marginTop = '20px';
+    table.style.marginLeft = 'auto';
+    table.style.marginRight = 'auto';
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     const headers = [
@@ -488,10 +500,9 @@
       'Désignation',
       'Qté BTRS',
       'Qté retourner',
+      'Qté posée',
       'Magasin',
-      'Remarque',
-      "Date d'entrée site",
-      "Date de sortie site"
+      'Remarque'
     ];
     headers.forEach(text => {
       const th = document.createElement('th');
@@ -561,23 +572,23 @@
       const table = createDetailTable();
       const tbody = table.querySelector('tbody');
       savedRows.forEach(r => {
+        const placed = computePlaced(r.qtyBtrs, r.qtyReturn);
         const values = [
           r.siteCode,
           r.siteName,
           r.designation,
           r.qtyBtrs,
           r.qtyReturn,
+          placed,
           r.store,
-          r.remark,
-          r.entryDate,
-          r.exitDate
+          r.remark
         ];
         const row = document.createElement('tr');
         values.forEach(val => {
           const td = document.createElement('td');
-          td.textContent = val ? val : 'null';
+          td.textContent = formatCell(val);
           td.style.border = '1px solid #ccc';
-          if (!val) td.style.color = '#777';
+          if (val === undefined || val === null || val === '') td.style.color = '#777';
           row.appendChild(td);
         });
         tbody.appendChild(row);
@@ -738,16 +749,16 @@
     stored.push(dataObj);
     localStorage.setItem(key, JSON.stringify(stored));
 
+    const placed = computePlaced(qtyBtrs, qtyReturn);
     const values = [
       siteCode,
       siteName,
       designation,
       qtyBtrs,
       qtyReturn,
+      placed,
       store,
-      remark,
-      entryDate,
-      exitDate
+      remark
     ];
 
     let table = document.getElementById('detailTable');
@@ -761,9 +772,9 @@
     const row = document.createElement('tr');
     values.forEach(val => {
       const td = document.createElement('td');
-      td.textContent = val ? val : 'null';
+      td.textContent = formatCell(val);
       td.style.border = '1px solid #ccc';
-      if (!val) td.style.color = '#777';
+      if (val === undefined || val === null || val === '') td.style.color = '#777';
       row.appendChild(td);
     });
     tbody.appendChild(row);
