@@ -216,25 +216,43 @@
       border-radius: 8px;
       font-weight: bold;
     }
+
+    #detailView {
+      display: none;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      margin-top: 100px;
+    }
+
+    #detailView.show {
+      opacity: 1;
+    }
   </style>
 </head>
 <body oncontextmenu="return false;">
-  <header>
-    Liste des éléments
-    <button style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" title="Options">⋮</button>
-    <div class="form-group search-group" style="max-width: 380px; margin: 1rem auto 0;">
-      <input type="text" id="quickSearch" placeholder="Recherche..." autocomplete="off">
-      <ul class="history-list" id="searchHistoryList"></ul>
-    </div>
-  </header>
-  <div id="feedback">Liste ajoutée !</div>
+  <div id="mainView">
+    <header>
+      Liste des éléments
+      <button style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" title="Options">⋮</button>
+      <div class="form-group search-group" style="max-width: 380px; margin: 1rem auto 0;">
+        <input type="text" id="quickSearch" placeholder="Recherche..." autocomplete="off">
+        <ul class="history-list" id="searchHistoryList"></ul>
+      </div>
+    </header>
+    <div id="feedback">Liste ajoutée !</div>
 
-  <div class="container">
-    <!-- Contenu à venir ici -->
-    <div id="noResultsMessage" class="no-results">Aucun résultat trouvé</div>
+    <div class="container" id="mainViewContainer">
+      <!-- Contenu à venir ici -->
+      <div id="noResultsMessage" class="no-results">Aucun résultat trouvé</div>
+    </div>
+
+    <button class="fab" title="Ajouter" onclick="openModal()">+</button>
   </div>
 
-  <button class="fab" title="Ajouter" onclick="openModal()">+</button>
+  <div id="detailView">
+    <header id="detailHeader"></header>
+    <div id="detailContent"></div>
+  </div>
 
   <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal-content">
@@ -293,6 +311,43 @@
     }, 300);
   }
 
+  function showDetail(name) {
+    const detailView = document.getElementById('detailView');
+    const mainView = document.getElementById('mainView');
+    const header = document.getElementById('detailHeader');
+    header.innerHTML = '';
+    header.style.position = 'relative';
+    const back = document.createElement('button');
+    back.textContent = '←';
+    back.style.position = 'absolute';
+    back.style.left = '1rem';
+    back.style.top = '50%';
+    back.style.transform = 'translateY(-50%)';
+    back.style.background = 'none';
+    back.style.border = 'none';
+    back.style.color = 'white';
+    back.style.fontSize = '1.5rem';
+    back.style.cursor = 'pointer';
+    back.onclick = hideDetail;
+    header.appendChild(back);
+    const title = document.createElement('span');
+    title.textContent = name;
+    header.appendChild(title);
+    detailView.style.display = 'block';
+    mainView.style.display = 'none';
+    requestAnimationFrame(() => detailView.classList.add('show'));
+  }
+
+  function hideDetail() {
+    const detailView = document.getElementById('detailView');
+    const mainView = document.getElementById('mainView');
+    detailView.classList.remove('show');
+    setTimeout(() => {
+      detailView.style.display = 'none';
+    }, 400);
+    mainView.style.display = 'block';
+  }
+
   function addElementToDOM(item) {
     const container = document.querySelector('.container');
     const msg = document.getElementById('noResultsMessage');
@@ -311,6 +366,7 @@
     editBtn.style.fontSize = '0.9rem';
     editBtn.style.cursor = 'pointer';
     newListItem.appendChild(editBtn);
+    newListItem.onclick = () => showDetail(item.listName);
     container.insertBefore(newListItem, msg);
   }
 
