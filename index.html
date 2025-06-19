@@ -212,6 +212,10 @@
     /* Popup menu styles */
     .popup-menu {
       position: absolute;
+      top: 50%;
+      left: 100%;
+      transform: translateY(-50%);
+      margin-left: 10px;
       background: #fff;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
       border-radius: 8px;
@@ -434,9 +438,7 @@
     event.stopPropagation();
     closeContextMenu();
     const menu = document.getElementById('popupMenu');
-    const rect = event.target.getBoundingClientRect();
-    menu.style.top = rect.bottom + window.scrollY + 'px';
-    menu.style.left = rect.left + window.scrollX + 'px';
+    event.target.parentElement.appendChild(menu);
     menu.dataset.index = index;
     menu.style.display = 'block';
     setTimeout(() => document.addEventListener('click', closeContextMenuOnClick));
@@ -445,6 +447,7 @@
   function closeContextMenu() {
     const menu = document.getElementById('popupMenu');
     menu.style.display = 'none';
+    document.body.appendChild(menu);
     document.removeEventListener('click', closeContextMenuOnClick);
   }
 
