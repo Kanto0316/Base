@@ -283,6 +283,22 @@
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 
+    .detail-add-btn {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background-color: #3498db;
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 2rem;
+      height: 2rem;
+      font-size: 1.2rem;
+      line-height: 1rem;
+      cursor: pointer;
+    }
+
     #detailContent {
       padding-top: 80px;
     }
@@ -432,6 +448,10 @@
     }
     title.textContent = name;
     header.appendChild(title);
+    const addBtn = document.createElement('button');
+    addBtn.textContent = '+';
+    addBtn.className = 'detail-add-btn';
+    header.appendChild(addBtn);
 
     const detailResult = document.getElementById('detailResult');
     const format = v => v ? v : 'Null';
