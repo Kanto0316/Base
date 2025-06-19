@@ -311,6 +311,10 @@
     editBtn.style.fontSize = '0.9rem';
     editBtn.style.cursor = 'pointer';
     newListItem.appendChild(editBtn);
+    newListItem.addEventListener('click', () => {
+      const url = 'detail.html?name=' + encodeURIComponent(item.listName);
+      window.location.href = url;
+    });
     container.insertBefore(newListItem, msg);
   }
 

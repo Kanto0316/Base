@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Détail</title>
+  <style>
+    body {
+      margin: 0;
+      padding-top: 80px;
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+    }
+    header {
+      background-color: #2c3e50;
+      color: white;
+      text-align: center;
+      padding: 1.5rem 0;
+      font-size: 1.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+    }
+    header button {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <button onclick="goBack()" title="Retour">\u2190</button>
+    <span id="detailTitle"></span>
+  </header>
+
+  <script>
+    function goBack() {
+      window.location.href = 'index.html';
+    }
+    function setTitle() {
+      const params = new URLSearchParams(window.location.search);
+      let name = params.get('name');
+      if (!name) {
+        name = localStorage.getItem('detailName') || '';
+      }
+      document.getElementById('detailTitle').textContent = name ? name.toUpperCase() : '';
+    }
+    document.addEventListener('DOMContentLoaded', setTitle);
+  </script>
+</body>
+</html>
