@@ -310,6 +310,7 @@
 
   <div id="detailView">
     <header id="detailHeader"></header>
+    <div id="detailResult"></div>
     <div id="detailContent"></div>
   </div>
 
@@ -419,6 +420,16 @@
     const title = document.createElement('span');
     title.textContent = name;
     header.appendChild(title);
+
+    const detailResult = document.getElementById('detailResult');
+    const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
+    const item = elements.find(el => el.listName === name) || {};
+    const format = v => v ? v : 'Null';
+    detailResult.innerHTML =
+      `<div><strong style="color:#000;">Nom du site :</strong> <span style="color:#777;">${format(item.listName)}</span></div>` +
+      `<div><strong style="color:#000;">Code du site :</strong> <span style="color:#777;">${format(item.siteCode)}</span></div>` +
+      `<div><strong style="color:#000;">Date d'entrée site :</strong> <span style="color:#777;">${format(item.entryDate)}</span></div>` +
+      `<div><strong style="color:#000;">Date de sortie site :</strong> <span style="color:#777;">${format(item.exitDate)}</span></div>`;
     detailView.style.display = 'block';
     mainView.style.display = 'none';
     requestAnimationFrame(() => detailView.classList.add('show'));
