@@ -721,7 +721,21 @@
     const index = modal.dataset.index;
     const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
     if (elements[index]) {
-      elements[index].listName = document.getElementById('editName').value.trim();
+      const oldName = elements[index].listName || '';
+      const newName = document.getElementById('editName').value.trim();
+      const oldKey = getTableKey(oldName);
+      const newKey = getTableKey(newName);
+      if (oldKey !== newKey) {
+        const data = localStorage.getItem(oldKey);
+        if (data !== null) {
+          localStorage.setItem(newKey, data);
+          localStorage.removeItem(oldKey);
+        }
+        if (localStorage.getItem('currentListName') === oldName) {
+          localStorage.setItem('currentListName', newName);
+        }
+      }
+      elements[index].listName = newName;
       localStorage.setItem('listeElements', JSON.stringify(elements));
     }
     closeEditModal();
