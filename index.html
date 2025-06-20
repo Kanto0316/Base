@@ -344,6 +344,14 @@
       max-width: 100%;
       padding-bottom: 1rem;
     }
+
+    .table-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-top: 1rem;
+    }
   </style>
 </head>
 <body oncontextmenu="return false;">
@@ -604,10 +612,13 @@
     if (existingTable) existingTable.remove();
     const existingWrapper = detailView.querySelector('.table-wrapper');
     if (existingWrapper) existingWrapper.remove();
+    const existingFilters = detailView.querySelector('.table-filters');
+    if (existingFilters) existingFilters.remove();
     const savedRows = JSON.parse(localStorage.getItem(key)) || [];
     if (savedRows.length > 0) {
       const table = createDetailTable();
       const tbody = table.querySelector('tbody');
+      const stores = [];
       savedRows.forEach((r, idx) => {
         const placed = computePlaced(r.qtyBtrs, r.qtyReturn);
         const values = [
@@ -640,10 +651,12 @@
         action.appendChild(box);
         row.appendChild(action);
         tbody.appendChild(row);
+        if (r.store && !stores.includes(r.store)) stores.push(r.store);
       });
       const wrapper = document.createElement('div');
       wrapper.className = 'table-wrapper';
       wrapper.appendChild(table);
+      createDetailFilters(stores);
       detailView.appendChild(wrapper);
     }
 
@@ -867,6 +880,7 @@
         wrapper.className = 'table-wrapper';
         detailView.appendChild(wrapper);
       }
+      if (!detailView.querySelector('.table-filters')) createDetailFilters([]);
       wrapper.appendChild(table);
     }
 
@@ -894,6 +908,8 @@
 
     updateDeleteButtonVisibility();
 
+    updateStoreFilterOptions();
+
     closeAddDetailModal();
     updateExportVisibility();
   }
@@ -911,6 +927,84 @@
     const boxes = document.querySelectorAll('#detailTable tbody input[type="checkbox"]');
     const any = Array.from(boxes).some(b => b.checked);
     if (btn) btn.style.display = any ? 'block' : 'none';
+  }
+
+  function applyDetailFilters() {
+    const code = (document.getElementById('filterSiteCode')?.value || '').trim().toUpperCase();
+    const name = (document.getElementById('filterSiteName')?.value || '').trim().toUpperCase();
+    const desig = (document.getElementById('filterDesignation')?.value || '').trim().toUpperCase();
+    const store = (document.getElementById('filterStore')?.value || '').trim().toUpperCase();
+    const rows = document.querySelectorAll('#detailTable tbody tr');
+    rows.forEach(row => {
+      const cells = row.querySelectorAll('td');
+      const c = cells[1]?.textContent.toUpperCase() || '';
+      const n = cells[2]?.textContent.toUpperCase() || '';
+      const d = cells[3]?.textContent.toUpperCase() || '';
+      const s = cells[7]?.textContent.toUpperCase() || '';
+      const show = (!code || c.includes(code)) &&
+                   (!name || n.includes(name)) &&
+                   (!desig || d.includes(desig)) &&
+                   (!store || s === store);
+      row.style.display = show ? '' : 'none';
+    });
+  }
+
+  function resetDetailFilters() {
+    const code = document.getElementById('filterSiteCode');
+    const name = document.getElementById('filterSiteName');
+    const desig = document.getElementById('filterDesignation');
+    const store = document.getElementById('filterStore');
+    if (code) code.value = '';
+    if (name) name.value = '';
+    if (desig) desig.value = '';
+    if (store) store.value = '';
+    applyDetailFilters();
+  }
+
+  function createDetailFilters(stores) {
+    const detailView = document.getElementById('detailView');
+    let container = detailView.querySelector('.table-filters');
+    if (container) container.remove();
+    container = document.createElement('div');
+    container.className = 'table-filters';
+    container.innerHTML =
+      '<input type="text" id="filterSiteCode" placeholder="Code du site">' +
+      '<input type="text" id="filterSiteName" placeholder="Nom du site">' +
+      '<input type="text" id="filterDesignation" placeholder="Désignation">' +
+      '<select id="filterStore"><option value="">Magasin</option></select>' +
+      '<button type="button" id="resetFilters">Réinitialiser</button>';
+    const wrapper = detailView.querySelector('.table-wrapper');
+    detailView.insertBefore(container, wrapper);
+    const select = container.querySelector('#filterStore');
+    stores.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      select.appendChild(opt);
+    });
+    container.querySelectorAll('input').forEach(inp => inp.addEventListener('input', applyDetailFilters));
+    select.addEventListener('change', applyDetailFilters);
+    container.querySelector('#resetFilters').addEventListener('click', resetDetailFilters);
+  }
+
+  function updateStoreFilterOptions() {
+    const select = document.getElementById('filterStore');
+    if (!select) return;
+    const current = select.value;
+    const rows = document.querySelectorAll('#detailTable tbody tr');
+    const stores = new Set();
+    rows.forEach(row => {
+      const val = row.querySelectorAll('td')[7]?.textContent;
+      if (val) stores.add(val);
+    });
+    select.innerHTML = '<option value="">Magasin</option>';
+    stores.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      select.appendChild(opt);
+    });
+    if (current && [...stores].includes(current)) select.value = current; else select.value = '';
   }
 
   function openDeleteRowsModal() {
@@ -947,6 +1041,7 @@
     localStorage.setItem(key, JSON.stringify(remaining));
     updateRowIndices();
     updateDeleteButtonVisibility();
+    updateStoreFilterOptions();
     updateExportVisibility();
     closeDeleteRowsModal();
   }
