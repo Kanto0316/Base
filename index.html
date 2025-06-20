@@ -435,11 +435,13 @@
     </div>
   </div>
 
-  <div class="modal" id="actionModal" role="dialog" aria-modal="true">
+  <div class="modal" id="actionModal" role="dialog" aria-modal="true" aria-labelledby="actionTitle">
     <div class="modal-content">
-      <button type="button" onclick="openEditModal()">Modifier</button>
-      <button type="button" class="cancel" onclick="openDeleteModal()">Supprimer</button>
-      <button type="button" onclick="exportTableData()">Exporter</button>
+      <h2 id="actionTitle">Actions</h2>
+      <div class="button-group">
+        <button type="button" class="cancel" onclick="openDeleteModal()">Supprimer</button>
+        <button type="button" class="gray" onclick="closeActionModal()">Annuler</button>
+      </div>
     </div>
   </div>
 
@@ -617,6 +619,27 @@
       });
     } catch (e) {
       localStorage.removeItem(oldKey);
+    }
+  }
+
+  async function dbDeleteKey(key) {
+    if (dbDisabled) {
+      localStorage.removeItem(key);
+      return;
+    }
+    try {
+      const db = await openDb();
+      return new Promise(resolve => {
+        const tx = db.transaction('tableaux', 'readwrite');
+        tx.objectStore('tableaux').delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => {
+          localStorage.removeItem(key);
+          resolve();
+        };
+      });
+    } catch (e) {
+      localStorage.removeItem(key);
     }
   }
 
@@ -873,7 +896,11 @@
     const modal = document.getElementById('deleteModal');
     const index = modal.dataset.index;
     const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
-    elements.splice(index, 1);
+    const item = elements.splice(index, 1)[0];
+    if (item && item.listName) {
+      const key = getTableKey(item.listName);
+      dbDeleteKey(key);
+    }
     localStorage.setItem('listeElements', JSON.stringify(elements));
     closeDeleteModal();
     displayElements();
@@ -1160,10 +1187,7 @@
     editBtn.dataset.index = index;
     editBtn.onclick = (e) => {
       e.stopPropagation();
-      closeActionModal();
-      const name = newListItem.dataset.name;
-      showDetailView(name);
-      window.location.hash = '#detail-' + encodeURIComponent(name);
+      openActionModal(index);
     };
     newListItem.appendChild(editBtn);
     newListItem.dataset.name = item.listName || '';
