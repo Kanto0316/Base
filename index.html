@@ -521,6 +521,105 @@
     return 'tableData_' + name.replace(/\s+/g, '').toLowerCase();
   }
 
+  /* IndexedDB helpers */
+  let dbInstance;
+  let dbDisabled = false;
+
+  function openDb() {
+    if (dbDisabled || !('indexedDB' in window)) return Promise.reject();
+    if (dbInstance) return Promise.resolve(dbInstance);
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('ListeElementsDB', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('tableaux')) {
+          db.createObjectStore('tableaux', { keyPath: 'key' });
+        }
+      };
+      req.onerror = () => {
+        dbDisabled = true;
+        reject();
+      };
+      req.onsuccess = () => {
+        dbInstance = req.result;
+        resolve(dbInstance);
+      };
+    });
+  }
+
+  async function dbGetRows(key) {
+    if (dbDisabled) {
+      return JSON.parse(localStorage.getItem(key)) || [];
+    }
+    try {
+      const db = await openDb();
+      return new Promise(resolve => {
+        const tx = db.transaction('tableaux', 'readonly');
+        const store = tx.objectStore('tableaux');
+        const get = store.get(key);
+        get.onsuccess = () => resolve(get.result ? get.result.rows || [] : []);
+        get.onerror = () => resolve([]);
+      });
+    } catch (e) {
+      return JSON.parse(localStorage.getItem(key)) || [];
+    }
+  }
+
+  async function dbSetRows(key, rows) {
+    if (dbDisabled) {
+      localStorage.setItem(key, JSON.stringify(rows));
+      return;
+    }
+    try {
+      const db = await openDb();
+      return new Promise(resolve => {
+        const tx = db.transaction('tableaux', 'readwrite');
+        tx.objectStore('tableaux').put({ key, rows });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => {
+          dbDisabled = true;
+          localStorage.setItem(key, JSON.stringify(rows));
+          resolve();
+        };
+      });
+    } catch (e) {
+      localStorage.setItem(key, JSON.stringify(rows));
+    }
+  }
+
+  async function dbAddRow(key, row) {
+    const rows = await dbGetRows(key);
+    rows.push(row);
+    await dbSetRows(key, rows);
+  }
+
+  async function dbDeleteRows(key, remaining) {
+    await dbSetRows(key, remaining);
+  }
+
+  async function dbRenameKey(oldKey, newKey) {
+    const rows = await dbGetRows(oldKey);
+    if (rows.length) await dbSetRows(newKey, rows);
+    if (dbDisabled) {
+      localStorage.removeItem(oldKey);
+      return;
+    }
+    try {
+      const db = await openDb();
+      return new Promise(resolve => {
+        const tx = db.transaction('tableaux', 'readwrite');
+        tx.objectStore('tableaux').delete(oldKey);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => {
+          localStorage.removeItem(oldKey);
+          resolve();
+        };
+      });
+    } catch (e) {
+      localStorage.removeItem(oldKey);
+    }
+  }
+
   function computePlaced(btrs, ret) {
     const n1 = parseFloat(btrs);
     const n2 = parseFloat(ret);
@@ -567,7 +666,7 @@
     return table;
   }
 
-  function showDetail(element) {
+  async function showDetail(element) {
     const detailView = document.getElementById('detailView');
     const mainView = document.getElementById('mainView');
     const header = document.getElementById('detailHeader');
@@ -614,7 +713,7 @@
     if (existingWrapper) existingWrapper.remove();
     const existingFilters = detailView.querySelector('.table-filters');
     if (existingFilters) existingFilters.remove();
-    const savedRows = JSON.parse(localStorage.getItem(key)) || [];
+    const savedRows = await dbGetRows(key);
     if (savedRows.length > 0) {
       const table = createDetailTable();
       const tbody = table.querySelector('tbody');
@@ -729,7 +828,7 @@
     closeActionModal();
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     const modal = document.getElementById('editModal');
     const index = modal.dataset.index;
     const elements = JSON.parse(localStorage.getItem('listeElements')) || [];
@@ -739,11 +838,7 @@
       const oldKey = getTableKey(oldName);
       const newKey = getTableKey(newName);
       if (oldKey !== newKey) {
-        const data = localStorage.getItem(oldKey);
-        if (data !== null) {
-          localStorage.setItem(newKey, data);
-          localStorage.removeItem(oldKey);
-        }
+        await dbRenameKey(oldKey, newKey);
         if (localStorage.getItem('currentListName') === oldName) {
           localStorage.setItem('currentListName', newName);
         }
@@ -827,7 +922,7 @@
     setTimeout(() => { modal.style.display = 'none'; }, 300);
   }
 
-  function addDetailItem() {
+  async function addDetailItem() {
     const designation = document.getElementById('designation').value.trim().toUpperCase();
     const qtyBtrs = document.getElementById('qtyBtrs').value.trim().toUpperCase();
     const qtyReturn = document.getElementById('qtyReturn').value.trim().toUpperCase();
@@ -854,9 +949,7 @@
       exitDate
     };
     const key = getTableKey(siteName);
-    const stored = JSON.parse(localStorage.getItem(key)) || [];
-    stored.push(dataObj);
-    localStorage.setItem(key, JSON.stringify(stored));
+    await dbAddRow(key, dataObj);
 
     const placed = computePlaced(qtyBtrs, qtyReturn);
     const values = [
@@ -1023,11 +1116,11 @@
     }
   }
 
-  function confirmRowDelete() {
+  async function confirmRowDelete() {
     const key = document.getElementById('detailView').dataset.tableKey;
     const tbody = document.querySelector('#detailTable tbody');
     if (!tbody) return;
-    const stored = JSON.parse(localStorage.getItem(key)) || [];
+    const stored = await dbGetRows(key);
     const remaining = [];
     const rows = Array.from(tbody.querySelectorAll('tr'));
     rows.forEach((tr, idx) => {
@@ -1038,7 +1131,7 @@
         remaining.push(stored[idx]);
       }
     });
-    localStorage.setItem(key, JSON.stringify(remaining));
+    await dbDeleteRows(key, remaining);
     updateRowIndices();
     updateDeleteButtonVisibility();
     updateStoreFilterOptions();
