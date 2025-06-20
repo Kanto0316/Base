@@ -771,7 +771,8 @@
 
     localStorage.setItem('currentPage', 'detail');
     localStorage.setItem('currentListName', name);
-    window.history.pushState({page: 'detail', name}, '', '#detailView');
+    const anchor = '#detail-' + encodeURIComponent(name);
+    window.history.pushState({page: 'detail', name}, '', anchor);
   }
 
   function showDetailView(name) {
@@ -1157,8 +1158,12 @@
     editBtn.style.fontSize = '0.9rem';
     editBtn.style.cursor = 'pointer';
     editBtn.dataset.index = index;
-    editBtn.onclick = () => {
-      openActionModal(index);
+    editBtn.onclick = (e) => {
+      e.stopPropagation();
+      closeActionModal();
+      const name = newListItem.dataset.name;
+      showDetailView(name);
+      window.location.hash = '#detail-' + encodeURIComponent(name);
     };
     newListItem.appendChild(editBtn);
     newListItem.dataset.name = item.listName || '';
