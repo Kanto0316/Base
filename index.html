@@ -490,6 +490,27 @@
     </div>
   </div>
 
+  <script type="module">
+    // Firebase configuration and initialization
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-analytics.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD6krHqIlaD7Jo-ERhNxEFuuenwjwHrhro",
+      authDomain: "base-737bf.firebaseapp.com",
+      projectId: "base-737bf",
+      storageBucket: "base-737bf.firebasestorage.app",
+      messagingSenderId: "560283994192",
+      appId: "1:560283994192:web:ede7aa7a3714c439542955",
+      measurementId: "G-LMQC9RVF2E"
+    };
+
+    const app = initializeApp(firebaseConfig);
+
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+      getAnalytics(app);
+    }
+  </script>
   <script>
     function openModal() {
       const modal = document.getElementById('modal');
