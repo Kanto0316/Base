@@ -16,7 +16,11 @@ SoftwareSerial sim800(7, 8);  // RX, TX
 const unsigned long MODEM_TIMEOUT_MS = 12000;
 const unsigned long SMS_POLL_INTERVAL_MS = 3000;
 const unsigned long LCD_STATUS_DISPLAY_MS = 1500;
+const unsigned long MODEM_RETRY_INTERVAL_MS = 5000;
 unsigned long lastSmsPollMs = 0;
+unsigned long lastModemRetryMs = 0;
+
+bool modemInitialized = false;
 
 String lastIncomingCaller = "";
 bool incomingCallRinging = false;
@@ -49,6 +53,40 @@ bool sendAT(const String &cmd, const String &expected, unsigned long timeoutMs, 
   while (sim800.available()) sim800.read();
   sim800.println(cmd);
   return waitForToken(expected, timeoutMs, response);
+}
+
+bool configureModem() {
+  String response;
+  if (!sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  if (!sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  if (!sendAT("AT+CSCS=\"GSM\"", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  if (!sendAT("AT+CLIP=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  if (!sendAT("AT+CNMI=1,1,0,0,0", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  return true;
+}
+
+bool ensureModemReady() {
+  if (modemInitialized) return true;
+
+  if (millis() - lastModemRetryMs < MODEM_RETRY_INTERVAL_MS) {
+    return false;
+  }
+  lastModemRetryMs = millis();
+
+  if (!sim800Responds()) {
+    Serial.println("SIM800 indisponible, nouvelle tentative...");
+    return false;
+  }
+
+  modemInitialized = configureModem();
+  if (modemInitialized) {
+    Serial.println("SIM800 pret.");
+    showTemporaryStatus("SIM800 pret", "SMS actifs");
+  } else {
+    Serial.println("SIM800 detecte mais config echouee.");
+  }
+
+  return modemInitialized;
 }
 
 bool sim800Responds() {
@@ -87,6 +125,10 @@ String generateCode4() {
 }
 
 bool sendSms(const String &phone, const String &message) {
+  if (!ensureModemReady()) {
+    return false;
+  }
+
   String response;
   while (sim800.available()) sim800.read();
 
@@ -127,6 +169,10 @@ void showTemporaryStatus(const String &l1, const String &l2) {
 }
 
 void processIncomingCallEvents() {
+  if (!ensureModemReady()) {
+    return;
+  }
+
   static String modemLine = "";
 
   while (sim800.available()) {
@@ -171,6 +217,10 @@ void clearMessageBoxes() {
 }
 
 void processUnreadSms() {
+  if (!ensureModemReady()) {
+    return;
+  }
+
   String response;
   if (!sendAT("AT+CMGL=\"REC UNREAD\"", "OK", MODEM_TIMEOUT_MS, response)) {
     return;
@@ -238,16 +288,9 @@ void setup() {
 
   lcdPrint2Lines("Test reponse", "SIM800...");
 
-  bool modemOk = sim800Responds();
+  modemInitialized = sim800Responds() && configureModem();
 
-  String response;
-  sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response);
-  sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response);
-  sendAT("AT+CSCS=\"GSM\"", "OK", MODEM_TIMEOUT_MS, response);
-  sendAT("AT+CLIP=1", "OK", MODEM_TIMEOUT_MS, response);
-  sendAT("AT+CNMI=1,1,0,0,0", "OK", MODEM_TIMEOUT_MS, response);
-
-  lcdPrint2Lines(modemOk ? "SIM800 repond" : "Pas de reponse", "Mode SMS actif");
+  lcdPrint2Lines(modemInitialized ? "SIM800 repond" : "Attente SIM800", "Mode SMS actif");
   delay(1200);
 
   randomSeed(analogRead(A0));
@@ -255,6 +298,7 @@ void setup() {
 }
 
 void loop() {
+  ensureModemReady();
   processIncomingCallEvents();
 
   if (millis() - lastSmsPollMs >= SMS_POLL_INTERVAL_MS) {
