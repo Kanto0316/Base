@@ -13,18 +13,8 @@
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 SoftwareSerial sim800(2, 3);  // RX, TX
 
-const char USSD_CODE[] = "#111*1*6*1#";
 const unsigned long MODEM_TIMEOUT_MS = 12000;
-const unsigned long MODEM_READY_TIMEOUT_MS = 45000;
-const unsigned long USSD_TIMEOUT_MS = 30000;
-
-String extractQuoted(const String &line) {
-  int first = line.indexOf('"');
-  if (first < 0) return "";
-  int second = line.indexOf('"', first + 1);
-  if (second < 0) return "";
-  return line.substring(first + 1, second);
-}
+const unsigned long SIM_READY_TIMEOUT_MS = 45000;
 
 void lcdPrint2Lines(const String &l1, const String &l2) {
   lcd.clear();
@@ -32,15 +22,6 @@ void lcdPrint2Lines(const String &l1, const String &l2) {
   lcd.print(l1.substring(0, 16));
   lcd.setCursor(0, 1);
   lcd.print(l2.substring(0, 16));
-}
-
-void lcdScrollMessage(const String &msg, unsigned long stepDelay = 260) {
-  String padded = msg + "                ";
-  for (unsigned int i = 0; i + 16 <= padded.length(); i++) {
-    lcd.setCursor(0, 1);
-    lcd.print(padded.substring(i, i + 16));
-    delay(stepDelay);
-  }
 }
 
 bool waitForToken(const String &token, unsigned long timeoutMs, String &fullResponse) {
@@ -65,7 +46,7 @@ bool sendAT(const String &cmd, const String &expected, unsigned long timeoutMs, 
   return waitForToken(expected, timeoutMs, response);
 }
 
-bool waitForModemReady(unsigned long timeoutMs) {
+bool waitForSimReady(unsigned long timeoutMs) {
   unsigned long start = millis();
   String response;
 
@@ -73,17 +54,11 @@ bool waitForModemReady(unsigned long timeoutMs) {
     bool simReady = sendAT("AT+CPIN?", "+CPIN:", MODEM_TIMEOUT_MS, response) &&
                     response.indexOf("READY") >= 0;
 
-    bool registered = sendAT("AT+CREG?", "+CREG:", MODEM_TIMEOUT_MS, response) &&
-                      (response.indexOf(",1") >= 0 || response.indexOf(",5") >= 0);
-
-    bool signalOk = sendAT("AT+CSQ", "+CSQ:", MODEM_TIMEOUT_MS, response) &&
-                    response.indexOf(",99") < 0;
-
-    if (simReady && registered && signalOk) {
+    if (simReady) {
       return true;
     }
 
-    lcdPrint2Lines("Attente SIM800L", "reseau/SIM...");
+    lcdPrint2Lines("Attente SIM", "SIM non prete");
     delay(1500);
   }
 
@@ -101,51 +76,10 @@ bool initModem() {
   }
 
   if (!sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response)) return false;
-  if (!sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
-
-  // Assure que le module SIM800L est vraiment pret
-  if (!waitForModemReady(MODEM_READY_TIMEOUT_MS)) return false;
-
-  if (!sendAT("AT+CUSD=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  // Assure que la SIM est vraiment prete
+  if (!waitForSimReady(SIM_READY_TIMEOUT_MS)) return false;
 
   return true;
-}
-
-bool requestUSSD(const String &code, String &resultText) {
-  String response;
-  String cmd = "AT+CUSD=1,\"" + code + "\",15";
-
-  if (!sendAT(cmd, "OK", MODEM_TIMEOUT_MS, response)) {
-    return false;
-  }
-
-  unsigned long start = millis();
-  String line = "";
-
-  while (millis() - start < USSD_TIMEOUT_MS) {
-    while (sim800.available()) {
-      char c = sim800.read();
-      if (c == '\n') {
-        line.trim();
-        if (line.startsWith("+CUSD:")) {
-          String text = extractQuoted(line);
-          if (text.length() > 0) {
-            resultText = text;
-            return true;
-          }
-        }
-        if (line.indexOf("ERROR") >= 0) {
-          return false;
-        }
-        line = "";
-      } else if (c != '\r') {
-        line += c;
-      }
-    }
-  }
-
-  resultText = "Timeout USSD";
-  return false;
 }
 
 void setup() {
@@ -160,30 +94,15 @@ void setup() {
   lcdPrint2Lines("Init modem...", "patientez");
 
   if (!initModem()) {
-    lcdPrint2Lines("Echec modem", "Verifier SIM/RS");
+    lcdPrint2Lines("Etat SIM:", "NON PRETE");
+    Serial.println("SIM NOT READY");
     return;
   }
 
-  lcdPrint2Lines("USSD en cours", String(USSD_CODE));
-
-  String ussdResult;
-  if (requestUSSD(USSD_CODE, ussdResult)) {
-    lcdPrint2Lines("Reponse USSD:", "");
-    delay(900);
-    if (ussdResult.length() <= 16) {
-      lcdPrint2Lines("Reponse USSD:", ussdResult);
-    } else {
-      lcdPrint2Lines("Reponse USSD:", ussdResult.substring(0, 16));
-      delay(1000);
-      lcdScrollMessage(ussdResult);
-    }
-    Serial.println("USSD OK: " + ussdResult);
-  } else {
-    lcdPrint2Lines("USSD echec", "ou timeout");
-    Serial.println("USSD Failed / timeout");
-  }
+  lcdPrint2Lines("Etat SIM:", "PRETE");
+  Serial.println("SIM READY");
 }
 
 void loop() {
-  // Aucun polling continu pour eviter d'envoyer plusieurs fois le code USSD.
+  // Pas d'action continue: affichage simple de l'etat SIM.
 }
