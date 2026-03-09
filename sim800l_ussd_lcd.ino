@@ -15,9 +15,7 @@ SoftwareSerial sim800(7, 8);  // RX, TX
 
 const unsigned long MODEM_TIMEOUT_MS = 12000;
 const unsigned long SMS_POLL_INTERVAL_MS = 3000;
-const unsigned long SMS_TREATMENT_COOLDOWN_MS = 60000;
 unsigned long lastSmsPollMs = 0;
-unsigned long lastSmsTreatmentMs = 0;
 
 void lcdPrint2Lines(const String &l1, const String &l2) {
   lcd.clear();
@@ -68,6 +66,12 @@ String trimSmsText(String text) {
   return text;
 }
 
+String normalizeSmsCommand(String text) {
+  text = trimSmsText(text);
+  text.toUpperCase();
+  return text;
+}
+
 String generateCode4() {
   static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   String code = "";
@@ -102,11 +106,6 @@ void clearMessageBoxes() {
 }
 
 void processUnreadSms() {
-  if (lastSmsTreatmentMs != 0 && millis() - lastSmsTreatmentMs < SMS_TREATMENT_COOLDOWN_MS) {
-    // Dernier message traite il y a moins d'1 minute: ne rien faire.
-    return;
-  }
-
   String response;
   if (!sendAT("AT+CMGL=\"REC UNREAD\"", "OK", MODEM_TIMEOUT_MS, response)) {
     return;
@@ -144,12 +143,18 @@ void processUnreadSms() {
     Serial.print(": ");
     Serial.println(smsBody);
 
-    if (smsBody == "Code") {
+    String smsCommand = normalizeSmsCommand(smsBody);
+    if (smsCommand == "CODE") {
       String code = generateCode4();
       String reply = "Votre Code est " + code;
       bool sent = sendSms(sender, reply);
       Serial.println(sent ? "Reponse envoyee" : "Echec envoi reponse");
-      lcdPrint2Lines("Code envoye a:", sender.substring(0, 16));
+      lcdPrint2Lines(sent ? "Code envoye a:" : "Echec envoi SMS", sender.substring(0, 16));
+    } else {
+      String help = "Envoyez CODE pour recevoir votre code";
+      bool sent = sendSms(sender, help);
+      Serial.println(sent ? "Message aide envoye" : "Echec envoi message aide");
+      lcdPrint2Lines(sent ? "Aide envoyee a:" : "Echec envoi SMS", sender.substring(0, 16));
     }
 
     treatedAtLeastOne = true;
@@ -157,7 +162,6 @@ void processUnreadSms() {
   }
 
   if (treatedAtLeastOne) {
-    lastSmsTreatmentMs = millis();
     clearMessageBoxes();
   }
 }
