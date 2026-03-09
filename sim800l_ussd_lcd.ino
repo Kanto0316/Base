@@ -15,7 +15,9 @@ SoftwareSerial sim800(7, 8);  // RX, TX
 
 const unsigned long MODEM_TIMEOUT_MS = 12000;
 const unsigned long SMS_POLL_INTERVAL_MS = 3000;
+const unsigned long SMS_TREATMENT_COOLDOWN_MS = 60000;
 unsigned long lastSmsPollMs = 0;
+unsigned long lastSmsTreatmentMs = 0;
 
 void lcdPrint2Lines(const String &l1, const String &l2) {
   lcd.clear();
@@ -100,12 +102,18 @@ bool sendSms(const String &phone, const String &message) {
   return waitForToken("OK", MODEM_TIMEOUT_MS, response);
 }
 
-void clearInbox() {
+void clearMessageBoxes() {
   String response;
+  // Nettoie toutes les boites (recu, lu, envoye, brouillon, etc.).
   sendAT("AT+CMGDA=\"DEL ALL\"", "OK", MODEM_TIMEOUT_MS, response);
 }
 
 void processUnreadSms() {
+  if (lastSmsTreatmentMs != 0 && millis() - lastSmsTreatmentMs < SMS_TREATMENT_COOLDOWN_MS) {
+    // Dernier message traite il y a moins d'1 minute: ne rien faire.
+    return;
+  }
+
   String response;
   if (!sendAT("AT+CMGL=\"REC UNREAD\"", "OK", MODEM_TIMEOUT_MS, response)) {
     return;
@@ -156,7 +164,8 @@ void processUnreadSms() {
   }
 
   if (treatedAtLeastOne) {
-    clearInbox();
+    lastSmsTreatmentMs = millis();
+    clearMessageBoxes();
   }
 }
 
