@@ -49,22 +49,15 @@ bool sendAT(const String &cmd, const String &expected, unsigned long timeoutMs, 
   return waitForToken(expected, timeoutMs, response);
 }
 
-bool initModem() {
+bool sim800Responds() {
   String response;
   for (uint8_t i = 0; i < 4; i++) {
     if (sendAT("AT", "OK", MODEM_TIMEOUT_MS, response)) {
-      break;
+      return true;
     }
     delay(500);
-    if (i == 3) return false;
   }
-
-  if (!sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response)) return false;
-  if (!sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
-  if (!sendAT("AT+CSCS=\"GSM\"", "OK", MODEM_TIMEOUT_MS, response)) return false;
-  if (!sendAT("AT+CNMI=1,1,0,0,0", "OK", MODEM_TIMEOUT_MS, response)) return false;
-
-  return true;
+  return false;
 }
 
 String trimSmsText(String text) {
@@ -178,12 +171,18 @@ void setup() {
   sim800.begin(9600);
   delay(1200);
 
-  lcdPrint2Lines("Init modem...", "patientez");
+  lcdPrint2Lines("Test reponse", "SIM800...");
 
-  if (!initModem()) {
-    lcdPrint2Lines("Erreur modem", "Init impossible");
-    return;
-  }
+  bool modemOk = sim800Responds();
+
+  String response;
+  sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response);
+  sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response);
+  sendAT("AT+CSCS=\"GSM\"", "OK", MODEM_TIMEOUT_MS, response);
+  sendAT("AT+CNMI=1,1,0,0,0", "OK", MODEM_TIMEOUT_MS, response);
+
+  lcdPrint2Lines(modemOk ? "SIM800 repond" : "Pas de reponse", "Mode SMS actif");
+  delay(1200);
 
   randomSeed(analogRead(A0));
   lcdPrint2Lines("Mode SMS actif", "Attente message");
