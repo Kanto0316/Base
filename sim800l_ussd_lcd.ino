@@ -173,13 +173,11 @@ void setup() {
 
   if (!initModem()) {
     lcdPrint2Lines("Erreur modem", "Init impossible");
-    Serial.println("MODEM INIT FAILED");
     return;
   }
 
   randomSeed(analogRead(A0));
   lcdPrint2Lines("Mode SMS actif", "Attente message");
-  Serial.println("SMS MODE READY");
 }
 
 void loop() {
