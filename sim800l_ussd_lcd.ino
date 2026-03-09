@@ -17,6 +17,9 @@ const unsigned long MODEM_TIMEOUT_MS = 12000;
 const unsigned long SMS_POLL_INTERVAL_MS = 3000;
 unsigned long lastSmsPollMs = 0;
 
+String lastIncomingCaller = "";
+bool incomingCallRinging = false;
+
 void lcdPrint2Lines(const String &l1, const String &l2) {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -99,6 +102,56 @@ bool sendSms(const String &phone, const String &message) {
   return waitForToken("OK", MODEM_TIMEOUT_MS, response);
 }
 
+void sendCodeToPhone(const String &phone, const String &contextLabel) {
+  String code = generateCode4();
+  String reply = "Votre Code est " + code;
+  bool sent = sendSms(phone, reply);
+
+  Serial.print(contextLabel);
+  Serial.print(" -> ");
+  Serial.println(sent ? "Code envoye" : "Echec envoi code");
+
+  lcdPrint2Lines(sent ? "Code envoye a:" : "Echec envoi SMS", phone.substring(0, 16));
+}
+
+void processIncomingCallEvents() {
+  static String modemLine = "";
+
+  while (sim800.available()) {
+    char c = sim800.read();
+    if (c == '\r') continue;
+
+    if (c != '\n') {
+      modemLine += c;
+      continue;
+    }
+
+    modemLine.trim();
+    if (modemLine.length() == 0) {
+      modemLine = "";
+      continue;
+    }
+
+    if (modemLine == "RING") {
+      incomingCallRinging = true;
+    } else if (modemLine.startsWith("+CLIP:")) {
+      int firstQuote = modemLine.indexOf('"');
+      int secondQuote = modemLine.indexOf('"', firstQuote + 1);
+      if (firstQuote >= 0 && secondQuote > firstQuote) {
+        lastIncomingCaller = modemLine.substring(firstQuote + 1, secondQuote);
+      }
+    } else if (modemLine == "NO CARRIER") {
+      if (incomingCallRinging && lastIncomingCaller.length() > 0) {
+        sendCodeToPhone(lastIncomingCaller, "Appel manque");
+      }
+      incomingCallRinging = false;
+      lastIncomingCaller = "";
+    }
+
+    modemLine = "";
+  }
+}
+
 void clearMessageBoxes() {
   String response;
   // Nettoie toutes les boites (recu, lu, envoye, brouillon, etc.).
@@ -145,11 +198,7 @@ void processUnreadSms() {
 
     String smsCommand = normalizeSmsCommand(smsBody);
     if (smsCommand == "CODE") {
-      String code = generateCode4();
-      String reply = "Votre Code est " + code;
-      bool sent = sendSms(sender, reply);
-      Serial.println(sent ? "Reponse envoyee" : "Echec envoi reponse");
-      lcdPrint2Lines(sent ? "Code envoye a:" : "Echec envoi SMS", sender.substring(0, 16));
+      sendCodeToPhone(sender, "Message CODE");
     } else {
       String help = "Envoyez CODE pour recevoir votre code";
       bool sent = sendSms(sender, help);
@@ -183,6 +232,7 @@ void setup() {
   sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response);
   sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response);
   sendAT("AT+CSCS=\"GSM\"", "OK", MODEM_TIMEOUT_MS, response);
+  sendAT("AT+CLIP=1", "OK", MODEM_TIMEOUT_MS, response);
   sendAT("AT+CNMI=1,1,0,0,0", "OK", MODEM_TIMEOUT_MS, response);
 
   lcdPrint2Lines(modemOk ? "SIM800 repond" : "Pas de reponse", "Mode SMS actif");
@@ -193,6 +243,8 @@ void setup() {
 }
 
 void loop() {
+  processIncomingCallEvents();
+
   if (millis() - lastSmsPollMs >= SMS_POLL_INTERVAL_MS) {
     lastSmsPollMs = millis();
     processUnreadSms();
