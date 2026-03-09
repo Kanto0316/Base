@@ -14,7 +14,8 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 SoftwareSerial sim800(2, 3);  // RX, TX
 
 const unsigned long MODEM_TIMEOUT_MS = 12000;
-const unsigned long SIM_READY_TIMEOUT_MS = 45000;
+const unsigned long SMS_POLL_INTERVAL_MS = 3000;
+unsigned long lastSmsPollMs = 0;
 
 void lcdPrint2Lines(const String &l1, const String &l2) {
   lcd.clear();
@@ -46,25 +47,6 @@ bool sendAT(const String &cmd, const String &expected, unsigned long timeoutMs, 
   return waitForToken(expected, timeoutMs, response);
 }
 
-bool waitForSimReady(unsigned long timeoutMs) {
-  unsigned long start = millis();
-  String response;
-
-  while (millis() - start < timeoutMs) {
-    bool simReady = sendAT("AT+CPIN?", "+CPIN:", MODEM_TIMEOUT_MS, response) &&
-                    response.indexOf("READY") >= 0;
-
-    if (simReady) {
-      return true;
-    }
-
-    lcdPrint2Lines("Attente SIM", "SIM non prete");
-    delay(1500);
-  }
-
-  return false;
-}
-
 bool initModem() {
   String response;
   for (uint8_t i = 0; i < 4; i++) {
@@ -76,10 +58,106 @@ bool initModem() {
   }
 
   if (!sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response)) return false;
-  // Assure que la SIM est vraiment prete
-  if (!waitForSimReady(SIM_READY_TIMEOUT_MS)) return false;
+  if (!sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  if (!sendAT("AT+CSCS=\"GSM\"", "OK", MODEM_TIMEOUT_MS, response)) return false;
+  if (!sendAT("AT+CNMI=1,1,0,0,0", "OK", MODEM_TIMEOUT_MS, response)) return false;
 
   return true;
+}
+
+String trimSmsText(String text) {
+  text.trim();
+  text.replace("\r", "");
+  text.replace("\n", "");
+  text.trim();
+  return text;
+}
+
+String generateCode4() {
+  static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  String code = "";
+  for (uint8_t i = 0; i < 4; i++) {
+    uint8_t index = random(0, sizeof(alphabet) - 1);
+    code += alphabet[index];
+  }
+  return code;
+}
+
+bool sendSms(const String &phone, const String &message) {
+  String response;
+  while (sim800.available()) sim800.read();
+
+  sim800.print("AT+CMGS=\"");
+  sim800.print(phone);
+  sim800.println("\"");
+
+  if (!waitForToken(">", MODEM_TIMEOUT_MS, response)) {
+    return false;
+  }
+
+  sim800.print(message);
+  sim800.write(26);  // Ctrl+Z
+  return waitForToken("OK", MODEM_TIMEOUT_MS, response);
+}
+
+void clearInbox() {
+  String response;
+  sendAT("AT+CMGDA=\"DEL ALL\"", "OK", MODEM_TIMEOUT_MS, response);
+}
+
+void processUnreadSms() {
+  String response;
+  if (!sendAT("AT+CMGL=\"REC UNREAD\"", "OK", MODEM_TIMEOUT_MS, response)) {
+    return;
+  }
+
+  int searchPos = 0;
+  bool treatedAtLeastOne = false;
+  while (true) {
+    int headerPos = response.indexOf("+CMGL:", searchPos);
+    if (headerPos < 0) break;
+
+    int numberStart = response.indexOf("\"", headerPos);
+    if (numberStart < 0) break;
+    numberStart = response.indexOf("\"", numberStart + 1);
+    if (numberStart < 0) break;
+    numberStart = response.indexOf("\"", numberStart + 1);
+    if (numberStart < 0) break;
+    int numberEnd = response.indexOf("\"", numberStart + 1);
+    if (numberEnd < 0) break;
+
+    String sender = response.substring(numberStart + 1, numberEnd);
+
+    int bodyStart = response.indexOf("\n", numberEnd);
+    if (bodyStart < 0) break;
+    bodyStart += 1;
+    int bodyEnd = response.indexOf("\n+CMGL:", bodyStart);
+    if (bodyEnd < 0) {
+      bodyEnd = response.indexOf("\nOK", bodyStart);
+      if (bodyEnd < 0) bodyEnd = response.length();
+    }
+
+    String smsBody = trimSmsText(response.substring(bodyStart, bodyEnd));
+    Serial.print("SMS recu de ");
+    Serial.print(sender);
+    Serial.print(": ");
+    Serial.println(smsBody);
+
+    if (smsBody == "Code") {
+      String code = generateCode4();
+      String reply = "Votre Code est " + code;
+      bool sent = sendSms(sender, reply);
+      Serial.println(sent ? "Reponse envoyee" : "Echec envoi reponse");
+      lcdPrint2Lines("Code envoye a:", sender.substring(0, 16));
+    }
+
+    treatedAtLeastOne = true;
+    searchPos = bodyEnd;
+  }
+
+  if (treatedAtLeastOne) {
+    clearInbox();
+  }
 }
 
 void setup() {
@@ -94,15 +172,19 @@ void setup() {
   lcdPrint2Lines("Init modem...", "patientez");
 
   if (!initModem()) {
-    lcdPrint2Lines("Etat SIM:", "NON PRETE");
-    Serial.println("SIM NOT READY");
+    lcdPrint2Lines("Erreur modem", "Init impossible");
+    Serial.println("MODEM INIT FAILED");
     return;
   }
 
-  lcdPrint2Lines("Etat SIM:", "PRETE");
-  Serial.println("SIM READY");
+  randomSeed(analogRead(A0));
+  lcdPrint2Lines("Mode SMS actif", "Attente message");
+  Serial.println("SMS MODE READY");
 }
 
 void loop() {
-  // Pas d'action continue: affichage simple de l'etat SIM.
+  if (millis() - lastSmsPollMs >= SMS_POLL_INTERVAL_MS) {
+    lastSmsPollMs = millis();
+    processUnreadSms();
+  }
 }
