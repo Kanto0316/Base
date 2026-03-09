@@ -15,6 +15,7 @@ SoftwareSerial sim800(7, 8);  // RX, TX
 
 const unsigned long MODEM_TIMEOUT_MS = 12000;
 const unsigned long SMS_POLL_INTERVAL_MS = 3000;
+const unsigned long LCD_STATUS_DISPLAY_MS = 1500;
 unsigned long lastSmsPollMs = 0;
 
 String lastIncomingCaller = "";
@@ -111,7 +112,18 @@ void sendCodeToPhone(const String &phone, const String &contextLabel) {
   Serial.print(" -> ");
   Serial.println(sent ? "Code envoye" : "Echec envoi code");
 
-  lcdPrint2Lines(sent ? "Code envoye a:" : "Echec envoi SMS", phone.substring(0, 16));
+  showTemporaryStatus(sent ? "Code envoye a:" : "Echec envoi SMS", phone.substring(0, 16));
+}
+
+
+void showIdleScreen() {
+  lcdPrint2Lines("Mode SMS actif", "Attente message");
+}
+
+void showTemporaryStatus(const String &l1, const String &l2) {
+  lcdPrint2Lines(l1, l2);
+  delay(LCD_STATUS_DISPLAY_MS);
+  showIdleScreen();
 }
 
 void processIncomingCallEvents() {
@@ -203,7 +215,7 @@ void processUnreadSms() {
       String help = "Envoyez CODE pour recevoir votre code";
       bool sent = sendSms(sender, help);
       Serial.println(sent ? "Message aide envoye" : "Echec envoi message aide");
-      lcdPrint2Lines(sent ? "Aide envoyee a:" : "Echec envoi SMS", sender.substring(0, 16));
+      showTemporaryStatus(sent ? "Aide envoyee a:" : "Echec envoi SMS", sender.substring(0, 16));
     }
 
     treatedAtLeastOne = true;
@@ -239,7 +251,7 @@ void setup() {
   delay(1200);
 
   randomSeed(analogRead(A0));
-  lcdPrint2Lines("Mode SMS actif", "Attente message");
+  showIdleScreen();
 }
 
 void loop() {
