@@ -7,11 +7,11 @@
 // SDA -> A4, SCL -> A5
 // Adresse I2C LCD la plus courante: 0x27 (parfois 0x3F)
 // SIM800L:
-// SIM800L TX -> D2 (RX logiciel)
-// SIM800L RX -> D3 (TX logiciel) via diviseur de tension (5V -> ~2.8V)
+// SIM800L TX -> D7 (RX logiciel)
+// SIM800L RX -> D8 (TX logiciel) via diviseur de tension (5V -> ~2.8V)
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-SoftwareSerial sim800(2, 3);  // RX, TX
+SoftwareSerial sim800(7, 8);  // RX, TX
 
 const unsigned long MODEM_TIMEOUT_MS = 12000;
 const unsigned long SMS_POLL_INTERVAL_MS = 3000;
