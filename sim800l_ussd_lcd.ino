@@ -1,18 +1,21 @@
-#include <LiquidCrystal.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 #include <SoftwareSerial.h>
 
 // ======== Cablage (UNO) ========
-// LCD 16x2 (mode 4 bits):
-// RS=7, E=8, D4=9, D5=10, D6=11, D7=12
+// LCD 16x2 I2C:
+// SDA -> A4, SCL -> A5
+// Adresse I2C LCD la plus courante: 0x27 (parfois 0x3F)
 // SIM800L:
 // SIM800L TX -> D2 (RX logiciel)
 // SIM800L RX -> D3 (TX logiciel) via diviseur de tension (5V -> ~2.8V)
 
-LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
 SoftwareSerial sim800(2, 3);  // RX, TX
 
 const char USSD_CODE[] = "#111*1*6*1#";
 const unsigned long MODEM_TIMEOUT_MS = 12000;
+const unsigned long MODEM_READY_TIMEOUT_MS = 45000;
 const unsigned long USSD_TIMEOUT_MS = 30000;
 
 String extractQuoted(const String &line) {
@@ -62,6 +65,31 @@ bool sendAT(const String &cmd, const String &expected, unsigned long timeoutMs, 
   return waitForToken(expected, timeoutMs, response);
 }
 
+bool waitForModemReady(unsigned long timeoutMs) {
+  unsigned long start = millis();
+  String response;
+
+  while (millis() - start < timeoutMs) {
+    bool simReady = sendAT("AT+CPIN?", "+CPIN:", MODEM_TIMEOUT_MS, response) &&
+                    response.indexOf("READY") >= 0;
+
+    bool registered = sendAT("AT+CREG?", "+CREG:", MODEM_TIMEOUT_MS, response) &&
+                      (response.indexOf(",1") >= 0 || response.indexOf(",5") >= 0);
+
+    bool signalOk = sendAT("AT+CSQ", "+CSQ:", MODEM_TIMEOUT_MS, response) &&
+                    response.indexOf(",99") < 0;
+
+    if (simReady && registered && signalOk) {
+      return true;
+    }
+
+    lcdPrint2Lines("Attente SIM800L", "reseau/SIM...");
+    delay(1500);
+  }
+
+  return false;
+}
+
 bool initModem() {
   String response;
   for (uint8_t i = 0; i < 4; i++) {
@@ -75,10 +103,8 @@ bool initModem() {
   if (!sendAT("ATE0", "OK", MODEM_TIMEOUT_MS, response)) return false;
   if (!sendAT("AT+CMGF=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
 
-  if (!sendAT("AT+CREG?", "+CREG:", MODEM_TIMEOUT_MS, response)) return false;
-  if (response.indexOf(",1") < 0 && response.indexOf(",5") < 0) return false;
-
-  if (!sendAT("AT+CSQ", "+CSQ:", MODEM_TIMEOUT_MS, response)) return false;
+  // Assure que le module SIM800L est vraiment pret
+  if (!waitForModemReady(MODEM_READY_TIMEOUT_MS)) return false;
 
   if (!sendAT("AT+CUSD=1", "OK", MODEM_TIMEOUT_MS, response)) return false;
 
@@ -95,12 +121,10 @@ bool requestUSSD(const String &code, String &resultText) {
 
   unsigned long start = millis();
   String line = "";
-  String all = "";
 
   while (millis() - start < USSD_TIMEOUT_MS) {
     while (sim800.available()) {
       char c = sim800.read();
-      all += c;
       if (c == '\n') {
         line.trim();
         if (line.startsWith("+CUSD:")) {
@@ -125,8 +149,9 @@ bool requestUSSD(const String &code, String &resultText) {
 }
 
 void setup() {
-  lcd.begin(16, 2);
-  lcdPrint2Lines("Demarrage...", "SIM800L + LCD");
+  lcd.init();
+  lcd.backlight();
+  lcdPrint2Lines("Demarrage...", "SIM800L + I2C");
 
   Serial.begin(9600);
   sim800.begin(9600);
@@ -135,7 +160,7 @@ void setup() {
   lcdPrint2Lines("Init modem...", "patientez");
 
   if (!initModem()) {
-    lcdPrint2Lines("Echec modem", "Verifier reseau");
+    lcdPrint2Lines("Echec modem", "Verifier SIM/RS");
     return;
   }
 
