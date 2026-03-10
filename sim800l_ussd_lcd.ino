@@ -145,6 +145,21 @@ bool sendSms(const String &phone, const String &message) {
   return waitForToken("OK", MODEM_TIMEOUT_MS, response);
 }
 
+bool callPhone(const String &phone) {
+  if (!ensureModemReady()) {
+    return false;
+  }
+
+  String response;
+  while (sim800.available()) sim800.read();
+
+  sim800.print("ATD");
+  sim800.print(phone);
+  sim800.println(";");
+
+  return waitForToken("OK", MODEM_TIMEOUT_MS, response);
+}
+
 void sendCodeToPhone(const String &phone, const String &contextLabel) {
   String code = generateCode4();
   String reply = "Votre Code est " + code;
@@ -261,11 +276,12 @@ void processUnreadSms() {
     String smsCommand = normalizeSmsCommand(smsBody);
     if (smsCommand == "CODE") {
       sendCodeToPhone(sender, "Message CODE");
+    } else if (smsCommand == "APPEL") {
+      bool called = callPhone(sender);
+      Serial.println(called ? "Appel lance" : "Echec lancement appel");
+      showTemporaryStatus(called ? "Appel vers:" : "Echec appel", sender.substring(0, 16));
     } else {
-      String help = "Envoyez CODE pour recevoir votre code";
-      bool sent = sendSms(sender, help);
-      Serial.println(sent ? "Message aide envoye" : "Echec envoi message aide");
-      showTemporaryStatus(sent ? "Aide envoyee a:" : "Echec envoi SMS", sender.substring(0, 16));
+      Serial.println("SMS ignore (commande non geree)");
     }
 
     treatedAtLeastOne = true;
