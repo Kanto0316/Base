@@ -17,6 +17,7 @@ const unsigned long MODEM_TIMEOUT_MS = 12000;
 const unsigned long SMS_POLL_INTERVAL_MS = 3000;
 const unsigned long LCD_STATUS_DISPLAY_MS = 1500;
 const unsigned long MODEM_RETRY_INTERVAL_MS = 5000;
+const unsigned long OUTGOING_CALL_WATCH_MS = 45000;
 unsigned long lastSmsPollMs = 0;
 unsigned long lastModemRetryMs = 0;
 
@@ -160,6 +161,44 @@ bool callPhone(const String &phone) {
   return waitForToken("OK", MODEM_TIMEOUT_MS, response);
 }
 
+void monitorOutgoingCallAndHangup() {
+  unsigned long start = millis();
+  String modemLine = "";
+
+  while (millis() - start < OUTGOING_CALL_WATCH_MS) {
+    while (sim800.available()) {
+      char c = sim800.read();
+      if (c == '\r') continue;
+
+      if (c != '\n') {
+        modemLine += c;
+        continue;
+      }
+
+      modemLine.trim();
+      if (modemLine.length() == 0) {
+        modemLine = "";
+        continue;
+      }
+
+      if (modemLine == "CONNECT" || modemLine == "VOICE CALL: BEGIN") {
+        String response;
+        sendAT("ATH", "OK", MODEM_TIMEOUT_MS, response);
+        return;
+      }
+
+      if (modemLine == "BUSY" || modemLine == "NO CARRIER" || modemLine == "NO ANSWER") {
+        return;
+      }
+
+      modemLine = "";
+    }
+  }
+
+  String response;
+  sendAT("ATH", "OK", MODEM_TIMEOUT_MS, response);
+}
+
 void sendCodeToPhone(const String &phone, const String &contextLabel) {
   String code = generateCode4();
   String reply = "Votre Code est " + code;
@@ -280,6 +319,9 @@ void processUnreadSms() {
       bool called = callPhone(sender);
       Serial.println(called ? "Appel lance" : "Echec lancement appel");
       showTemporaryStatus(called ? "Appel vers:" : "Echec appel", sender.substring(0, 16));
+      if (called) {
+        monitorOutgoingCallAndHangup();
+      }
     } else {
       Serial.println("SMS ignore (commande non geree)");
     }
