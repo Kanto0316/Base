@@ -115,9 +115,9 @@ String normalizeSmsCommand(String text) {
 }
 
 String generateCode4() {
-  static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  static const char alphabet[] = "0123456789";
   String code = "";
-  for (uint8_t i = 0; i < 4; i++) {
+  for (uint8_t i = 0; i < 6; i++) {
     uint8_t index = random(0, sizeof(alphabet) - 1);
     code += alphabet[index];
   }
