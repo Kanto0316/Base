@@ -154,13 +154,18 @@ String extractUssdPayload(String modemResponse) {
   return "+CUSD recu";
 }
 
-void displayUssdResponse(const String &ussdResponse) {
-  String lcdMessage = ussdResponse;
-  if (lcdMessage.length() == 0) {
-    lcdMessage = "Reponse vide";
+String buildUssdReplyMessage(String ussdResponse) {
+  ussdResponse = trimSmsText(ussdResponse);
+  if (ussdResponse.length() == 0) {
+    return "Reponse USSD vide";
   }
+  return ussdResponse;
+}
 
-  lcdPrint2Lines("Retour USSD:", lcdMessage.substring(0, 16));
+void displayUssdResponse(const String &ussdResponse) {
+  String lcdMessage = buildUssdReplyMessage(ussdResponse);
+
+  lcdPrint2Lines("Retour operateur", lcdMessage.substring(0, 16));
   delay(LCD_STATUS_DISPLAY_MS);
   showLcdMessage(lcdMessage);
 }
@@ -206,12 +211,13 @@ bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
   return false;
 }
 
-void handleUssdRequest(const String &ussdCode) {
+void handleUssdRequest(const String &ussdCode, const String &replyPhone) {
   lcdPrint2Lines("USSD en cours", ussdCode.substring(0, 16));
 
   String ussdResponse;
   bool hasError = false;
   executeUssd(ussdCode, ussdResponse, hasError);
+  ussdResponse = buildUssdReplyMessage(ussdResponse);
 
   Serial.print("USSD ");
   Serial.print(ussdCode);
@@ -219,6 +225,14 @@ void handleUssdRequest(const String &ussdCode) {
   Serial.println(ussdResponse);
 
   displayUssdResponse(ussdResponse);
+
+  if (replyPhone.length() > 0) {
+    bool smsSent = sendSms(replyPhone, ussdResponse);
+    Serial.print("Retour USSD vers ");
+    Serial.print(replyPhone);
+    Serial.print(" -> ");
+    Serial.println(smsSent ? "envoye" : "echec envoi SMS");
+  }
 }
 
 String generateCode4() {
@@ -435,7 +449,7 @@ void processUnreadSms() {
         monitorOutgoingCallAndHangup();
       }
     } else if (isUssdCommand(smsBody)) {
-      handleUssdRequest(trimSmsText(smsBody));
+      handleUssdRequest(trimSmsText(smsBody), sender);
     } else {
       Serial.println("SMS ignore (commande non geree)");
     }
