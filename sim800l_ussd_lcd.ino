@@ -18,6 +18,7 @@ const unsigned long SMS_POLL_INTERVAL_MS = 3000;
 const unsigned long LCD_STATUS_DISPLAY_MS = 1500;
 const unsigned long MODEM_RETRY_INTERVAL_MS = 5000;
 const unsigned long OUTGOING_CALL_WATCH_MS = 45000;
+const unsigned long USSD_RESPONSE_TIMEOUT_MS = 20000;
 unsigned long lastSmsPollMs = 0;
 unsigned long lastModemRetryMs = 0;
 
@@ -113,6 +114,85 @@ String normalizeSmsCommand(String text) {
   text = trimSmsText(text);
   text.toUpperCase();
   return text;
+}
+
+bool isUssdCommand(String text) {
+  text = trimSmsText(text);
+  if (text.length() < 2 || text.charAt(text.length() - 1) != '#') {
+    return false;
+  }
+
+  char firstChar = text.charAt(0);
+  return firstChar == '*' || firstChar == '#';
+}
+
+void showLcdMessage(const String &message) {
+  String cleanMessage = trimSmsText(message);
+  if (cleanMessage.length() == 0) {
+    cleanMessage = "Reponse vide";
+  }
+
+  lcdPrint2Lines(cleanMessage.substring(0, 16), cleanMessage.substring(16, 32));
+}
+
+bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
+  if (!ensureModemReady()) {
+    ussdResponse = "SIM800 indisponible";
+    hasError = true;
+    return false;
+  }
+
+  while (sim800.available()) sim800.read();
+
+  sim800.print("AT+CUSD=1,\"");
+  sim800.print(code);
+  sim800.println("\",15");
+
+  unsigned long start = millis();
+  String modemResponse = "";
+  hasError = false;
+  ussdResponse = "";
+
+  while (millis() - start < USSD_RESPONSE_TIMEOUT_MS) {
+    while (sim800.available()) {
+      char c = sim800.read();
+      modemResponse += c;
+
+      if (modemResponse.indexOf("+CUSD:") >= 0) {
+        int firstQuote = modemResponse.indexOf('"');
+        int secondQuote = modemResponse.indexOf('"', firstQuote + 1);
+        if (firstQuote >= 0 && secondQuote > firstQuote) {
+          ussdResponse = modemResponse.substring(firstQuote + 1, secondQuote);
+        } else {
+          ussdResponse = "+CUSD recu";
+        }
+        return true;
+      }
+
+      if (modemResponse.indexOf("ERROR") >= 0) {
+        hasError = true;
+        ussdResponse = "Erreur USSD";
+        return false;
+      }
+    }
+  }
+
+  hasError = true;
+  ussdResponse = "Pas de reponse";
+  return false;
+}
+
+void handleUssdRequest(const String &ussdCode) {
+  String ussdResponse;
+  bool hasError = false;
+  executeUssd(ussdCode, ussdResponse, hasError);
+
+  Serial.print("USSD ");
+  Serial.print(ussdCode);
+  Serial.print(" -> ");
+  Serial.println(ussdResponse);
+
+  showLcdMessage(ussdResponse);
 }
 
 String generateCode4() {
@@ -322,6 +402,8 @@ void processUnreadSms() {
       if (called) {
         monitorOutgoingCallAndHangup();
       }
+    } else if (isUssdCommand(smsBody)) {
+      handleUssdRequest(trimSmsText(smsBody));
     } else {
       Serial.println("SMS ignore (commande non geree)");
     }
