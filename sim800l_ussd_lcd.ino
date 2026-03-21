@@ -135,6 +135,36 @@ void showLcdMessage(const String &message) {
   lcdPrint2Lines(cleanMessage.substring(0, 16), cleanMessage.substring(16, 32));
 }
 
+String extractUssdPayload(String modemResponse) {
+  int cusdPos = modemResponse.indexOf("+CUSD:");
+  if (cusdPos < 0) {
+    return "";
+  }
+
+  int firstQuote = modemResponse.indexOf('"', cusdPos);
+  int secondQuote = modemResponse.indexOf('"', firstQuote + 1);
+  if (firstQuote >= 0 && secondQuote > firstQuote) {
+    String payload = modemResponse.substring(firstQuote + 1, secondQuote);
+    payload.replace("\r", " ");
+    payload.replace("\n", " ");
+    payload.trim();
+    return payload;
+  }
+
+  return "+CUSD recu";
+}
+
+void displayUssdResponse(const String &ussdResponse) {
+  String lcdMessage = ussdResponse;
+  if (lcdMessage.length() == 0) {
+    lcdMessage = "Reponse vide";
+  }
+
+  lcdPrint2Lines("Retour USSD:", lcdMessage.substring(0, 16));
+  delay(LCD_STATUS_DISPLAY_MS);
+  showLcdMessage(lcdMessage);
+}
+
 bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
   if (!ensureModemReady()) {
     ussdResponse = "SIM800 indisponible";
@@ -159,13 +189,7 @@ bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
       modemResponse += c;
 
       if (modemResponse.indexOf("+CUSD:") >= 0) {
-        int firstQuote = modemResponse.indexOf('"');
-        int secondQuote = modemResponse.indexOf('"', firstQuote + 1);
-        if (firstQuote >= 0 && secondQuote > firstQuote) {
-          ussdResponse = modemResponse.substring(firstQuote + 1, secondQuote);
-        } else {
-          ussdResponse = "+CUSD recu";
-        }
+        ussdResponse = extractUssdPayload(modemResponse);
         return true;
       }
 
@@ -183,6 +207,8 @@ bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
 }
 
 void handleUssdRequest(const String &ussdCode) {
+  lcdPrint2Lines("USSD en cours", ussdCode.substring(0, 16));
+
   String ussdResponse;
   bool hasError = false;
   executeUssd(ussdCode, ussdResponse, hasError);
@@ -192,7 +218,7 @@ void handleUssdRequest(const String &ussdCode) {
   Serial.print(" -> ");
   Serial.println(ussdResponse);
 
-  showLcdMessage(ussdResponse);
+  displayUssdResponse(ussdResponse);
 }
 
 String generateCode4() {
@@ -332,6 +358,11 @@ void processIncomingCallEvents() {
       if (firstQuote >= 0 && secondQuote > firstQuote) {
         lastIncomingCaller = modemLine.substring(firstQuote + 1, secondQuote);
       }
+    } else if (modemLine.startsWith("+CUSD:")) {
+      String ussdResponse = extractUssdPayload(modemLine);
+      Serial.print("Notification USSD -> ");
+      Serial.println(ussdResponse);
+      displayUssdResponse(ussdResponse);
     } else if (modemLine == "NO CARRIER") {
       if (incomingCallRinging && lastIncomingCaller.length() > 0) {
         sendCodeToPhone(lastIncomingCaller, "Appel manque");
@@ -343,6 +374,7 @@ void processIncomingCallEvents() {
     modemLine = "";
   }
 }
+
 
 void clearMessageBoxes() {
   String response;
