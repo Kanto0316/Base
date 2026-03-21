@@ -186,11 +186,9 @@ void displayUssdResponse(const String &ussdResponse) {
   showLcdMessage(lcdMessage);
 }
 
-bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
+String executeUssd(const String &code) {
   if (!ensureModemReady()) {
-    ussdResponse = "error";
-    hasError = true;
-    return false;
+    return "error";
   }
 
   while (sim800.available()) sim800.read();
@@ -202,8 +200,6 @@ bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
   unsigned long start = millis();
   String modemResponse = "";
   String modemLine = "";
-  hasError = false;
-  ussdResponse = "";
 
   while (millis() - start < USSD_RESPONSE_TIMEOUT_MS) {
     while (sim800.available()) {
@@ -226,33 +222,26 @@ bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
       }
 
       if (modemLine.startsWith("+CUSD:")) {
-        ussdResponse = extractUssdPayload(modemLine);
-        hasError = isUssdErrorStatus(extractUssdStatus(modemLine)) || ussdResponse.length() == 0;
-        return !hasError;
+        String ussdResponse = extractUssdPayload(modemLine);
+        bool hasError = isUssdErrorStatus(extractUssdStatus(modemLine)) || ussdResponse.length() == 0;
+        return buildUssdReplyMessage(ussdResponse, hasError);
       }
 
       if (modemLine.indexOf("ERROR") >= 0 || modemResponse.indexOf("ERROR") >= 0) {
-        hasError = true;
-        ussdResponse = "error";
-        return false;
+        return "error";
       }
 
       modemLine = "";
     }
   }
 
-  hasError = true;
-  ussdResponse = "error";
-  return false;
+  return "error";
 }
 
 void handleUssdRequest(const String &ussdCode, const String &replyPhone) {
   lcdPrint2Lines("USSD en cours", ussdCode.substring(0, 16));
 
-  String ussdResponse;
-  bool hasError = false;
-  executeUssd(ussdCode, ussdResponse, hasError);
-  ussdResponse = buildUssdReplyMessage(ussdResponse, hasError);
+  String ussdResponse = executeUssd(ussdCode);
 
   Serial.print("USSD ");
   Serial.print(ussdCode);
