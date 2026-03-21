@@ -151,13 +151,29 @@ String extractUssdPayload(String modemResponse) {
     return payload;
   }
 
-  return "+CUSD recu";
+  return "";
 }
 
-String buildUssdReplyMessage(String ussdResponse) {
+int extractUssdStatus(const String &modemResponse) {
+  int cusdPos = modemResponse.indexOf("+CUSD:");
+  if (cusdPos < 0) {
+    return -1;
+  }
+
+  int commaPos = modemResponse.indexOf(',', cusdPos);
+  String statusText = modemResponse.substring(cusdPos + 6, commaPos >= 0 ? commaPos : modemResponse.length());
+  statusText.trim();
+  return statusText.toInt();
+}
+
+bool isUssdErrorStatus(int status) {
+  return status == 2 || status == 4;
+}
+
+String buildUssdReplyMessage(String ussdResponse, bool hasError = false) {
   ussdResponse = trimSmsText(ussdResponse);
-  if (ussdResponse.length() == 0) {
-    return "Reponse USSD vide";
+  if (hasError || ussdResponse.length() == 0) {
+    return "error";
   }
   return ussdResponse;
 }
@@ -172,7 +188,7 @@ void displayUssdResponse(const String &ussdResponse) {
 
 bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
   if (!ensureModemReady()) {
-    ussdResponse = "SIM800 indisponible";
+    ussdResponse = "error";
     hasError = true;
     return false;
   }
@@ -185,6 +201,7 @@ bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
 
   unsigned long start = millis();
   String modemResponse = "";
+  String modemLine = "";
   hasError = false;
   ussdResponse = "";
 
@@ -193,21 +210,39 @@ bool executeUssd(const String &code, String &ussdResponse, bool &hasError) {
       char c = sim800.read();
       modemResponse += c;
 
-      if (modemResponse.indexOf("+CUSD:") >= 0) {
-        ussdResponse = extractUssdPayload(modemResponse);
-        return true;
+      if (c == '\r') {
+        continue;
       }
 
-      if (modemResponse.indexOf("ERROR") >= 0) {
+      if (c != '\n') {
+        modemLine += c;
+        continue;
+      }
+
+      modemLine.trim();
+      if (modemLine.length() == 0) {
+        modemLine = "";
+        continue;
+      }
+
+      if (modemLine.startsWith("+CUSD:")) {
+        ussdResponse = extractUssdPayload(modemLine);
+        hasError = isUssdErrorStatus(extractUssdStatus(modemLine)) || ussdResponse.length() == 0;
+        return !hasError;
+      }
+
+      if (modemLine.indexOf("ERROR") >= 0 || modemResponse.indexOf("ERROR") >= 0) {
         hasError = true;
-        ussdResponse = "Erreur USSD";
+        ussdResponse = "error";
         return false;
       }
+
+      modemLine = "";
     }
   }
 
   hasError = true;
-  ussdResponse = "Pas de reponse";
+  ussdResponse = "error";
   return false;
 }
 
@@ -217,7 +252,7 @@ void handleUssdRequest(const String &ussdCode, const String &replyPhone) {
   String ussdResponse;
   bool hasError = false;
   executeUssd(ussdCode, ussdResponse, hasError);
-  ussdResponse = buildUssdReplyMessage(ussdResponse);
+  ussdResponse = buildUssdReplyMessage(ussdResponse, hasError);
 
   Serial.print("USSD ");
   Serial.print(ussdCode);
@@ -373,7 +408,10 @@ void processIncomingCallEvents() {
         lastIncomingCaller = modemLine.substring(firstQuote + 1, secondQuote);
       }
     } else if (modemLine.startsWith("+CUSD:")) {
-      String ussdResponse = extractUssdPayload(modemLine);
+      String ussdResponse = buildUssdReplyMessage(
+        extractUssdPayload(modemLine),
+        isUssdErrorStatus(extractUssdStatus(modemLine))
+      );
       Serial.print("Notification USSD -> ");
       Serial.println(ussdResponse);
       displayUssdResponse(ussdResponse);
