@@ -1,66 +1,50 @@
 package com.netk.mvola.ui.home
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.netk.mvola.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.netk.mvola.ui.SalesViewModel
+import com.netk.mvola.ui.asCurrency
 
 @Composable
-fun HomeRoute(
-    onOpenSettings: () -> Unit,
-    viewModel: HomeViewModel = viewModel(),
-) {
-    HomeScreen(uiState = viewModel.uiState, onOpenSettings = onOpenSettings)
+fun HomeScreen(viewModel: SalesViewModel, onAddSale: () -> Unit) {
+    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Text("NetK", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Text("Mini Caisse", style = MaterialTheme.typography.titleLarge)
+            Text("Votre activité aujourd'hui", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item { StatCard("Chiffre d'affaires du jour", stats.todayRevenue.asCurrency(), true) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f)) { StatCard("Ventes totales", stats.saleCount.toString()) }
+                Box(Modifier.weight(1f)) { StatCard("Paiements MVola", stats.mvolaTotal.asCurrency()) }
+            }
+        }
+        item { StatCard("Paiements espèces", stats.cashTotal.asCurrency()) }
+        item { Button(onClick = onAddSale, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("+  AJOUTER UNE VENTE") } }
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(uiState: HomeUiState, onOpenSettings: () -> Unit) {
-    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) }) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
-                Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineLarge)
-                Text(
-                    stringResource(R.string.home_subtitle),
-                    modifier = Modifier.padding(top = 8.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-            item { Text(stringResource(R.string.features_title), style = MaterialTheme.typography.titleLarge) }
-            items(uiState.capabilities) { capability ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(capability, style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.module_ready), style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            item {
-                Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.open_settings))
-                }
-            }
+private fun StatCard(label: String, value: String, featured: Boolean = false) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (featured) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer) else CardDefaults.cardColors(),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
     }
 }
