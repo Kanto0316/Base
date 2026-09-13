@@ -1,49 +1,25 @@
-# Base Android
+# NetK Mini Caisse
 
-Application Android native en Kotlin qui fournit une base concrète et moderne pour un futur produit. L'écran d'accueil présente les capacités prévues et mène à un second écran, ce qui valide une navigation extensible. L'interface repose sur Jetpack Compose et Material Design 3, avec prise en charge des thèmes clair, sombre et dynamique.
+NetK Mini Caisse est une application Android native de gestion des ventes, conçue pour les petites boutiques. Elle fonctionne entièrement hors ligne : les ventes sont conservées dans une base Room locale et les statistiques sont actualisées automatiquement.
 
-## Prérequis
+## Fonctionnalités
 
-- Android Studio Ladybug ou plus récent ;
-- JDK 17 ;
-- Android SDK 35 installé (le `minSdk` 26 assure la compatibilité à partir d'Android 8.0).
+- tableau de bord du jour (chiffre d'affaires, espèces et MVola) ;
+- saisie d'une vente avec calcul automatique du montant ;
+- historique, recherche par produit et suppression ;
+- nom de boutique enregistré localement et devise Ariary ;
+- navigation Material Design 3 adaptée au téléphone.
 
-## Installation locale
+## Architecture
 
-1. Cloner ce dépôt.
-2. Ouvrir sa racine dans Android Studio.
-3. Laisser Gradle synchroniser les dépendances.
-4. Sélectionner un appareil ou un émulateur Android 8.0+ puis exécuter la configuration `app`.
+L'application utilise Kotlin, Jetpack Compose, Navigation Compose, Room et une architecture MVVM. La séparation `data/local`, repository, ViewModel et écrans Compose permet d'ajouter ultérieurement des implémentations de synchronisation Firebase, de lecture SMS MVola, de notifications ou d'export PDF sans modifier le modèle local.
 
-Il est aussi possible de compiler directement depuis un terminal :
+## Compiler
+
+Prérequis : JDK 17 et Android SDK 35.
 
 ```bash
-gradle assembleDebug
+./gradlew assembleDebug
 ```
 
-L'APK local est produit dans `app/build/outputs/apk/debug/app-debug.apk`.
-
-## APK depuis GitHub Actions
-
-Chaque push sur la branche `main` déclenche le workflow **Android APK**. Dans GitHub, ouvrir **Actions**, sélectionner l'exécution concernée, puis télécharger l'artifact **base-android-debug** depuis la section *Artifacts* de la page de résumé.
-
-Le workflow peut également être lancé manuellement avec **Run workflow**.
-
-## Architecture et évolutions
-
-Le projet suit une séparation MVVM légère :
-
-- `ui/navigation` centralise les destinations ;
-- `ui/home` regroupe l'état, le ViewModel et l'interface de la fonctionnalité d'accueil ;
-- `ui/settings` illustre l'ajout d'une page indépendante ;
-- `ui/theme` centralise Material 3 et les thèmes système.
-
-Les futures fonctionnalités peuvent être ajoutées sous forme de modules ou de packages dédiés sans coupler l'interface aux sources de données :
-
-- **connexion** : couche `auth` et fournisseur d'identité injecté dans un ViewModel ;
-- **Firebase** : plugins et implémentations dans une couche `data` ;
-- **API REST** : interface de service et repository dans `data/remote` ;
-- **Room** : base, DAO et entités dans `data/local` ;
-- **notifications** : service spécialisé et gestion des permissions selon la version Android.
-
-Ces bibliothèques ne sont volontairement pas encore déclarées afin de garder la compilation rapide et de ne pas imposer une solution avant son utilisation réelle.
+L'APK est généré dans `app/build/outputs/apk/debug/app-debug.apk`. Le workflow GitHub Actions existant compile aussi l'APK à chaque push sur `main` et peut être lancé manuellement.
