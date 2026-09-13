@@ -1,13 +1,13 @@
-package com.example.baseandroid.ui
+package com.netk.mvola.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.baseandroid.ui.home.HomeRoute
-import com.example.baseandroid.ui.navigation.Destination
-import com.example.baseandroid.ui.settings.SettingsScreen
+import com.netk.mvola.ui.home.HomeRoute
+import com.netk.mvola.ui.navigation.Destination
+import com.netk.mvola.ui.settings.SettingsScreen
 
 @Composable
 fun BaseAndroidApp(modifier: Modifier = Modifier) {
