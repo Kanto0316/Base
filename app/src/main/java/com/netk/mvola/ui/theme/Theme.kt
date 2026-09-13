@@ -1,4 +1,4 @@
-package com.example.baseandroid.ui.theme
+package com.netk.mvola.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

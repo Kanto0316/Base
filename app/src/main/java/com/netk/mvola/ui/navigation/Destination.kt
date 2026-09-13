@@ -1,4 +1,4 @@
-package com.example.baseandroid.ui.navigation
+package com.netk.mvola.ui.navigation
 
 sealed class Destination(val route: String) {
     data object Home : Destination("home")
