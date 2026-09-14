@@ -1,23 +1,17 @@
 # PDF by Kanto
 
-Application Android locale qui transforme une ou plusieurs images en un document PDF.
+Application Android légère qui affiche le site distant de PDF by Kanto dans une WebView.
 
-## Fonctionnalités V1
+## Fonctionnalités
 
-- sélection d'une ou plusieurs images avec Android Photo Picker ;
-- sélection de toutes les images accessibles via MediaStore ;
-- aperçu, nom et compteur des images choisies ;
-- une page PDF par image, avec orientation portrait ou paysage conservée ;
-- nom de fichier automatique `PDF_Kanto_date_heure.pdf` ;
-- historique Room des projets, de leurs images et du chemin du PDF ;
-- consultation d'un ancien projet et ouverture du PDF avec une application compatible ;
-- messages explicites lors d'un refus de permission.
-
-Les PDF sont enregistrés dans le dossier Documents propre à l'application. Aucune image source n'est modifiée.
+- chargement automatique de `http://kanto0316.github.io/Album` ;
+- JavaScript et stockage DOM activés ;
+- navigation des liens et historique dans la WebView ;
+- message d'erreur avec action de nouvelle tentative lorsque le site est inaccessible.
 
 ## Architecture
 
-Le package est `com.netk.app`. L'application utilise Kotlin, Jetpack Compose, Material Design 3, MVVM, un repository et Room.
+Le package est `com.netk.app`. L'application utilise Kotlin et la WebView Android native, sans base de données ni fonctionnalité locale de conversion PDF.
 
 ## Compiler
 

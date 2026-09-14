@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">PDF by Kanto</string>
+    <string name="site_unavailable">Le site est inaccessible. Vérifiez votre connexion Internet, puis réessayez.</string>
+    <string name="retry">Réessayer</string>
 </resources>
