@@ -1,7 +1,7 @@
 package com.netk.app
 
 import android.annotation.SuppressLint
-import android.app.Activity
+import android.accounts.AccountManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -24,43 +24,38 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.gms.common.AccountPicker
 import org.json.JSONObject
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var errorView: View
     private var accountSelectionInProgress = false
 
-    @Deprecated("Deprecated in Android, retained for the Google account chooser result")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != ACCOUNT_CHOOSER_REQUEST) return
-
+    private val googleAccountPicker = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
         accountSelectionInProgress = false
-        if (resultCode != RESULT_OK) {
-            returnGoogleAccount(null, GOOGLE_ACCOUNT_CANCELLED)
-            return
+        when (result.resultCode) {
+            RESULT_OK -> handleSelectedGoogleAccount(result.data)
+            RESULT_CANCELED -> returnGoogleAccount(null, GOOGLE_ACCOUNT_CANCELLED)
+            else -> returnGoogleAccount(null, GOOGLE_ACCOUNT_ERROR)
         }
+    }
 
-        val account = try {
-            GoogleSignIn.getSignedInAccountFromIntent(data)
-                .getResult(ApiException::class.java)
-        } catch (_: ApiException) {
-            null
-        }
+    private fun handleSelectedGoogleAccount(data: Intent?) {
+        val email = data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+        val accountType = data?.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE)
 
-        if (account?.email.isNullOrBlank()) {
+        if (email.isNullOrBlank()) {
             returnGoogleAccount(null, GOOGLE_ACCOUNT_ERROR)
         } else {
             returnGoogleAccount(
                 JSONObject().apply {
-                    put("id", account.id)
-                    put("email", account.email)
-                    put("displayName", account.displayName)
-                    put("photoUrl", account.photoUrl?.toString())
+                    put("email", email)
+                    put("type", accountType ?: GOOGLE_ACCOUNT_TYPE)
                 },
                 null,
             )
@@ -115,11 +110,18 @@ class MainActivity : Activity() {
     private fun showGoogleAccountChooser() {
         if (accountSelectionInProgress || !isTrustedSite(webView.url)) return
         accountSelectionInProgress = true
-        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .build()
-        val pickerIntent = GoogleSignIn.getClient(this, options).signInIntent
-        startActivityForResult(pickerIntent, ACCOUNT_CHOOSER_REQUEST)
+        val pickerIntent = AccountPicker.newChooseAccountIntent(
+            AccountPicker.AccountChooserOptions.Builder()
+                .setAllowableAccountsTypes(listOf(GOOGLE_ACCOUNT_TYPE))
+                .setAlwaysShowAccountPicker(true)
+                .build(),
+        )
+        try {
+            googleAccountPicker.launch(pickerIntent)
+        } catch (_: RuntimeException) {
+            accountSelectionInProgress = false
+            returnGoogleAccount(null, GOOGLE_ACCOUNT_ERROR)
+        }
     }
 
     private fun returnGoogleAccount(account: JSONObject?, error: String?) {
@@ -264,8 +266,8 @@ class MainActivity : Activity() {
         const val SITE_URL = "http://kanto0316.github.io/Album"
         const val SITE_HOST = "kanto0316.github.io"
         const val GOOGLE_ACCOUNTS_HOST = "accounts.google.com"
-        const val ACCOUNT_CHOOSER_REQUEST = 1002
         const val GOOGLE_BRIDGE_NAME = "AndroidGoogleSignIn"
+        const val GOOGLE_ACCOUNT_TYPE = "com.google"
         const val GOOGLE_ACCOUNT_CANCELLED = "cancelled"
         const val GOOGLE_ACCOUNT_ERROR = "account_unavailable"
 
@@ -275,6 +277,27 @@ class MainActivity : Activity() {
               window.__androidGoogleAccountBridgeInstalled = true;
 
               window.__receiveAndroidGoogleAccount = result => {
+                const googleButton = Array.from(
+                  document.querySelectorAll('button, a, [role="button"]')
+                ).find(element => [
+                  element.id,
+                  element.className,
+                  element.getAttribute('href'),
+                  element.getAttribute('aria-label'),
+                  element.getAttribute('data-provider'),
+                  element.textContent
+                ].filter(Boolean).join(' ').toLowerCase().includes('google'));
+
+                if (result.account && googleButton) {
+                  let accountLabel = document.getElementById('android-google-account');
+                  if (!accountLabel) {
+                    accountLabel = document.createElement('div');
+                    accountLabel.id = 'android-google-account';
+                    accountLabel.setAttribute('role', 'status');
+                    googleButton.insertAdjacentElement('afterend', accountLabel);
+                  }
+                  accountLabel.textContent = result.account.email;
+                }
                 window.dispatchEvent(new CustomEvent('android-google-account-result', {
                   detail: result
                 }));

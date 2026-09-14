@@ -4,6 +4,7 @@ plugins {
 }
 
 dependencies {
+    implementation(libs.androidx.activity)
     implementation(libs.play.services.auth)
 }
 
