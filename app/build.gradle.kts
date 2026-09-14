@@ -3,6 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+dependencies {
+    implementation(libs.play.services.auth)
+}
+
 android {
     namespace = "com.netk.app"
     compileSdk = 35
