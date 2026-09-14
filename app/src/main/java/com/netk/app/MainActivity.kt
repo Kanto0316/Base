@@ -5,6 +5,7 @@ import android.accounts.AccountManager
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
@@ -68,7 +69,12 @@ class MainActivity : Activity() {
         setContentView(root)
         root.requestApplyInsets()
 
-        loadGoogleAccounts()
+        val restoredAccountsStatus = savedInstanceState?.getCharSequence(ACCOUNTS_STATUS_STATE)
+        if (restoredAccountsStatus == null) {
+            showGoogleAccountChooser()
+        } else {
+            accountsStatusView.text = restoredAccountsStatus
+        }
 
         if (savedInstanceState == null) {
             loadSite()
@@ -94,12 +100,12 @@ class MainActivity : Activity() {
             textSize = 13f
             setTextColor(Color.GRAY)
             setPadding(0, dpToPx(4), 0, 0)
-            setOnClickListener { requestAccountsPermission() }
+            setOnClickListener { showGoogleAccountChooser() }
         }
         addView(accountsStatusView)
     }
 
-    private fun loadGoogleAccounts() {
+    private fun showGoogleAccountChooser() {
         if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED) {
             requestAccountsPermission()
             return
@@ -110,16 +116,26 @@ class MainActivity : Activity() {
         } catch (_: SecurityException) {
             emptyArray()
         }
-        accountsStatusView.text = if (googleAccounts.isEmpty()) {
-            getString(R.string.google_accounts_empty)
-        } else {
-            googleAccounts.joinToString(separator = "\n") { it.name }
+        if (googleAccounts.isEmpty()) {
+            accountsStatusView.text = getString(R.string.google_accounts_empty)
+            return
         }
+
+        val chooserIntent = AccountManager.newChooseAccountIntent(
+            null,
+            ArrayList(googleAccounts.asList()),
+            arrayOf(GOOGLE_ACCOUNT_TYPE),
+            getString(R.string.google_accounts_chooser_description),
+            null,
+            null,
+            null,
+        )
+        startActivityForResult(chooserIntent, ACCOUNT_CHOOSER_REQUEST)
     }
 
     private fun requestAccountsPermission() {
         if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) == PackageManager.PERMISSION_GRANTED) {
-            loadGoogleAccounts()
+            showGoogleAccountChooser()
         } else {
             requestPermissions(arrayOf(Manifest.permission.GET_ACCOUNTS), ACCOUNTS_PERMISSION_REQUEST)
         }
@@ -134,9 +150,28 @@ class MainActivity : Activity() {
         if (requestCode != ACCOUNTS_PERMISSION_REQUEST) return
 
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            loadGoogleAccounts()
+            showGoogleAccountChooser()
         } else {
             accountsStatusView.text = getString(R.string.google_accounts_permission_denied)
+        }
+    }
+
+    @Deprecated("Deprecated in Android, retained for the platform account chooser result")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != ACCOUNT_CHOOSER_REQUEST) return
+
+        if (resultCode != RESULT_OK) {
+            accountsStatusView.text = getString(R.string.google_accounts_selection_cancelled)
+            return
+        }
+
+        val accountName = data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+        val accountType = data?.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE)
+        accountsStatusView.text = if (accountName != null && accountType == GOOGLE_ACCOUNT_TYPE) {
+            getString(R.string.google_account_selected, accountName)
+        } else {
+            getString(R.string.google_accounts_selection_error)
         }
     }
 
@@ -204,6 +239,7 @@ class MainActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         webView.saveState(outState)
+        outState.putCharSequence(ACCOUNTS_STATUS_STATE, accountsStatusView.text)
         super.onSaveInstanceState(outState)
     }
 
@@ -247,5 +283,7 @@ class MainActivity : Activity() {
         const val SITE_URL = "http://kanto0316.github.io/Album"
         const val GOOGLE_ACCOUNT_TYPE = "com.google"
         const val ACCOUNTS_PERMISSION_REQUEST = 1001
+        const val ACCOUNT_CHOOSER_REQUEST = 1002
+        const val ACCOUNTS_STATUS_STATE = "accounts_status"
     }
 }
