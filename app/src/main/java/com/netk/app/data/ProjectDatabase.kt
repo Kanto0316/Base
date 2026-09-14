@@ -14,6 +14,8 @@ import androidx.room.Relation
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "projects")
@@ -38,7 +40,7 @@ data class ProjectImageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val projectId: Long,
     val position: Int,
-    val uri: String,
+    val localPath: String,
     val displayName: String,
 )
 
@@ -63,7 +65,7 @@ interface ProjectDao {
     suspend fun insertImages(images: List<ProjectImageEntity>)
 }
 
-@Database(entities = [ProjectEntity::class, ProjectImageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [ProjectEntity::class, ProjectImageEntity::class], version = 2, exportSchema = false)
 abstract class ProjectDatabase : RoomDatabase() {
     abstract fun projectDao(): ProjectDao
 
@@ -75,7 +77,32 @@ abstract class ProjectDatabase : RoomDatabase() {
                 context.applicationContext,
                 ProjectDatabase::class.java,
                 "pdf_kanto.db",
-            ).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+        }
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE project_images_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        projectId INTEGER NOT NULL,
+                        position INTEGER NOT NULL,
+                        localPath TEXT NOT NULL,
+                        displayName TEXT NOT NULL,
+                        FOREIGN KEY(projectId) REFERENCES projects(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO project_images_new (id, projectId, position, localPath, displayName)
+                    SELECT id, projectId, position,
+                        CASE WHEN uri LIKE 'file://%' THEN substr(uri, 8) ELSE uri END,
+                        displayName
+                    FROM project_images
+                """.trimIndent())
+                db.execSQL("DROP TABLE project_images")
+                db.execSQL("ALTER TABLE project_images_new RENAME TO project_images")
+                db.execSQL("CREATE INDEX index_project_images_projectId ON project_images(projectId)")
+            }
         }
     }
 }

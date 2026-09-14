@@ -2,7 +2,6 @@ package com.netk.app.data
 
 import android.content.ContentUris
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -24,7 +23,11 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
-data class SelectedImage(val uri: Uri, val name: String)
+data class SelectedImage(
+    val localPath: String,
+    val name: String,
+    val position: Int,
+)
 
 class PdfRepository(private val context: Context) {
     private val dao = ProjectDatabase.get(context).projectDao()
@@ -32,7 +35,7 @@ class PdfRepository(private val context: Context) {
     fun observeProjects(): Flow<List<ProjectWithImages>> = dao.observeProjects()
 
     suspend fun importImages(uris: List<Uri>): List<SelectedImage> = withContext(Dispatchers.IO) {
-        uris.distinct().map(::importImage)
+        uris.distinct().mapIndexed { index, uri -> importImage(uri, position = index) }
     }
 
     suspend fun allDeviceImages(): List<SelectedImage> = withContext(Dispatchers.IO) {
@@ -52,24 +55,17 @@ class PdfRepository(private val context: Context) {
                         MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                         cursor.getLong(id),
                     )
-                    add(importImage(uri, cursor.getString(name) ?: "Image"))
+                    add(importImage(uri, cursor.getString(name) ?: "Image", size))
                 }
             }
         }.orEmpty()
     }
 
     /**
-     * Keeps the provider grant when it supports persistent grants, then creates an
-     * app-owned copy. All subsequent previews and PDF reads use this local URI.
+     * Creates an app-owned copy while the temporary provider URI is still valid.
+     * Nothing outside this method retains or reads the provider URI.
      */
-    private fun importImage(sourceUri: Uri, knownName: String? = null): SelectedImage {
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(
-                sourceUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        }
-
+    private fun importImage(sourceUri: Uri, knownName: String? = null, position: Int = 0): SelectedImage {
         val name = knownName ?: displayName(sourceUri)
         val directory = File(context.filesDir, SELECTED_IMAGES_DIRECTORY)
         check(directory.exists() || directory.mkdirs()) { "Impossible de sauvegarder les images sélectionnées." }
@@ -89,7 +85,7 @@ class PdfRepository(private val context: Context) {
             target.delete()
             throw error
         }
-        return SelectedImage(Uri.fromFile(target), name)
+        return SelectedImage(target.absolutePath, name, position)
     }
 
     suspend fun createProject(name: String, images: List<SelectedImage>): ProjectEntity = withContext(Dispatchers.IO) {
@@ -103,7 +99,9 @@ class PdfRepository(private val context: Context) {
         try {
             val document = PdfDocument()
             try {
-                images.forEachIndexed { index, image -> addPage(document, image.uri, index + 1) }
+                images.sortedBy { it.position }.forEachIndexed { index, image ->
+                    addPage(document, File(image.localPath), index + 1)
+                }
                 output.outputStream().buffered().use { outputStream: OutputStream ->
                     document.writeTo(outputStream)
                 }
@@ -112,8 +110,8 @@ class PdfRepository(private val context: Context) {
             }
             val project = ProjectEntity(name = name.ifBlank { "Projet $stamp" }, createdAt = System.currentTimeMillis(), pdfPath = output.path)
             val id = dao.insertProject(project)
-            dao.insertImages(images.mapIndexed { index, image ->
-                ProjectImageEntity(projectId = id, position = index, uri = image.uri.toString(), displayName = image.name)
+            dao.insertImages(images.sortedBy { it.position }.mapIndexed { index, image ->
+                ProjectImageEntity(projectId = id, position = index, localPath = image.localPath, displayName = image.name)
             })
             project.copy(id = id)
         } catch (error: Exception) {
@@ -122,8 +120,8 @@ class PdfRepository(private val context: Context) {
         }
     }
 
-    private fun addPage(document: PdfDocument, uri: Uri, pageNumber: Int) {
-        val bitmap = loadBitmap(uri)
+    private fun addPage(document: PdfDocument, file: File, pageNumber: Int) {
+        val bitmap = loadBitmap(file)
         try {
             val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, pageNumber).create()
             val page = document.startPage(pageInfo)
@@ -134,20 +132,22 @@ class PdfRepository(private val context: Context) {
         }
     }
 
-    private fun loadBitmap(uri: Uri): Bitmap {
-        val resolver = context.contentResolver
+    private fun loadBitmap(file: File): Bitmap {
+        if (!file.isFile) throw FileNotFoundException("Image inaccessible : ${file.name}")
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: throw FileNotFoundException("Image inaccessible")
+        file.inputStream().buffered().use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalArgumentException("Format d’image non pris en charge : ${file.name}")
+        }
         var sample = 1
         while (bounds.outWidth / sample > MAX_PAGE_SIDE || bounds.outHeight / sample > MAX_PAGE_SIDE) sample *= 2
-        val bitmap = resolver.openInputStream(uri)?.use {
+        val bitmap = file.inputStream().buffered().use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
                 inSampleSize = sample
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             })
         } ?: throw IllegalArgumentException("Format d’image non pris en charge")
-        val rotation = resolver.openInputStream(uri)?.use { stream ->
+        val rotation = file.inputStream().buffered().use { stream ->
             when (ExifInterface(stream).rotationDegrees) { 90 -> 90f; 180 -> 180f; 270 -> 270f; else -> 0f }
         } ?: 0f
         if (rotation == 0f) return bitmap
@@ -162,6 +162,6 @@ class PdfRepository(private val context: Context) {
 
     private companion object {
         const val MAX_PAGE_SIDE = 2480
-        const val SELECTED_IMAGES_DIRECTORY = "selected_images"
+        const val SELECTED_IMAGES_DIRECTORY = "images"
     }
 }
