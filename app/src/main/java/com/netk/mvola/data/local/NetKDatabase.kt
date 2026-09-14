@@ -4,12 +4,9 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
-
-@Database(entities = [Sale::class], version = 1, exportSchema = false)
-@TypeConverters(Converters::class)
+@Database(entities = [Note::class, ImageEntity::class], version = 2, exportSchema = false)
 abstract class NetKDatabase : RoomDatabase() {
-    abstract fun saleDao(): SaleDao
+    abstract fun noteDao(): NoteDao
 
     companion object {
         @Volatile private var instance: NetKDatabase? = null
@@ -18,8 +15,8 @@ abstract class NetKDatabase : RoomDatabase() {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 NetKDatabase::class.java,
-                "netk-mini-caisse.db",
-            ).build().also { instance = it }
+                "netk-notes.db",
+            ).fallbackToDestructiveMigration().build().also { instance = it }
         }
     }
 }

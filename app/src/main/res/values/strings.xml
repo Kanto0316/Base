@@ -1,11 +1,3 @@
 <resources>
-    <string name="app_name">NetK</string>
-    <string name="home_title">Bienvenue</string>
-    <string name="home_subtitle">Une fondation moderne, prête pour votre prochain produit.</string>
-    <string name="features_title">Évolutions préparées</string>
-    <string name="module_ready">Module prêt à être intégré</string>
-    <string name="settings_title">Paramètres</string>
-    <string name="settings_body">Cette page démontre une navigation extensible avec Navigation Compose.</string>
-    <string name="open_settings">Ouvrir les paramètres</string>
-    <string name="back">Retour</string>
+    <string name="app_name">NetK Notes</string>
 </resources>
