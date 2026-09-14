@@ -1,12 +1,9 @@
 package com.netk.app
 
-import android.Manifest
-import android.accounts.AccountManager
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -25,6 +22,9 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -69,12 +69,8 @@ class MainActivity : Activity() {
         setContentView(root)
         root.requestApplyInsets()
 
-        val restoredAccountsStatus = savedInstanceState?.getCharSequence(ACCOUNTS_STATUS_STATE)
-        if (restoredAccountsStatus == null) {
-            showGoogleAccountChooser()
-        } else {
-            accountsStatusView.text = restoredAccountsStatus
-        }
+        accountsStatusView.text = savedInstanceState?.getCharSequence(ACCOUNTS_STATUS_STATE)
+            ?: getString(R.string.google_accounts_prompt)
 
         if (savedInstanceState == null) {
             loadSite()
@@ -96,64 +92,24 @@ class MainActivity : Activity() {
             setTextColor(Color.DKGRAY)
         })
         accountsStatusView = TextView(context).apply {
-            text = getString(R.string.google_accounts_permission_required)
+            text = getString(R.string.google_accounts_prompt)
             textSize = 13f
             setTextColor(Color.GRAY)
             setPadding(0, dpToPx(4), 0, 0)
-            setOnClickListener { showGoogleAccountChooser() }
         }
         addView(accountsStatusView)
+        addView(Button(context).apply {
+            text = getString(R.string.google_sign_in)
+            setOnClickListener { showGoogleAccountChooser() }
+        })
     }
 
     private fun showGoogleAccountChooser() {
-        if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED) {
-            requestAccountsPermission()
-            return
-        }
-
-        val googleAccounts = try {
-            AccountManager.get(this).getAccountsByType(GOOGLE_ACCOUNT_TYPE)
-        } catch (_: SecurityException) {
-            emptyArray()
-        }
-        if (googleAccounts.isEmpty()) {
-            accountsStatusView.text = getString(R.string.google_accounts_empty)
-            return
-        }
-
-        val chooserIntent = AccountManager.newChooseAccountIntent(
-            null,
-            ArrayList(googleAccounts.asList()),
-            arrayOf(GOOGLE_ACCOUNT_TYPE),
-            getString(R.string.google_accounts_chooser_description),
-            null,
-            null,
-            null,
-        )
-        startActivityForResult(chooserIntent, ACCOUNT_CHOOSER_REQUEST)
-    }
-
-    private fun requestAccountsPermission() {
-        if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) == PackageManager.PERMISSION_GRANTED) {
-            showGoogleAccountChooser()
-        } else {
-            requestPermissions(arrayOf(Manifest.permission.GET_ACCOUNTS), ACCOUNTS_PERMISSION_REQUEST)
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != ACCOUNTS_PERMISSION_REQUEST) return
-
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            showGoogleAccountChooser()
-        } else {
-            accountsStatusView.text = getString(R.string.google_accounts_permission_denied)
-        }
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .build()
+        val pickerIntent = GoogleSignIn.getClient(this, options).signInIntent
+        startActivityForResult(pickerIntent, ACCOUNT_CHOOSER_REQUEST)
     }
 
     @Deprecated("Deprecated in Android, retained for the platform account chooser result")
@@ -166,12 +122,17 @@ class MainActivity : Activity() {
             return
         }
 
-        val accountName = data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-        val accountType = data?.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE)
-        accountsStatusView.text = if (accountName != null && accountType == GOOGLE_ACCOUNT_TYPE) {
-            getString(R.string.google_account_selected, accountName)
-        } else {
+        val email = try {
+            GoogleSignIn.getSignedInAccountFromIntent(data)
+                .getResult(ApiException::class.java)
+                .email
+        } catch (_: ApiException) {
+            null
+        }
+        accountsStatusView.text = if (email.isNullOrBlank()) {
             getString(R.string.google_accounts_selection_error)
+        } else {
+            getString(R.string.google_account_selected, email)
         }
     }
 
@@ -281,8 +242,6 @@ class MainActivity : Activity() {
 
     private companion object {
         const val SITE_URL = "http://kanto0316.github.io/Album"
-        const val GOOGLE_ACCOUNT_TYPE = "com.google"
-        const val ACCOUNTS_PERMISSION_REQUEST = 1001
         const val ACCOUNT_CHOOSER_REQUEST = 1002
         const val ACCOUNTS_STATUS_STATE = "accounts_status"
     }
