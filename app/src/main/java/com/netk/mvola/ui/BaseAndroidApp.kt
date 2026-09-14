@@ -1,67 +1,37 @@
 package com.netk.mvola.ui
 
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.netk.mvola.data.SaleRepository
+import androidx.navigation.navArgument
+import com.netk.mvola.data.NoteRepository
 import com.netk.mvola.data.local.NetKDatabase
-import com.netk.mvola.ui.history.HistoryScreen
-import com.netk.mvola.ui.home.HomeScreen
+import com.netk.mvola.ui.notes.EditorScreen
+import com.netk.mvola.ui.notes.HomeScreen
+import com.netk.mvola.ui.notes.NoteDetailScreen
 import com.netk.mvola.ui.navigation.Destination
-import com.netk.mvola.ui.sales.AddSaleScreen
-import com.netk.mvola.ui.settings.SettingsScreen
-
-private data class NavItem(val destination: Destination, val label: String, val symbol: String)
 
 @Composable
 fun BaseAndroidApp(modifier: Modifier = Modifier) {
     val navController = rememberNavController()
     val context = LocalContext.current
     val database = NetKDatabase.getInstance(context)
-    val salesViewModel: SalesViewModel = viewModel(factory = SalesViewModel.Factory(SaleRepository(database.saleDao())))
-    val items = listOf(
-        NavItem(Destination.Home, "Accueil", "⌂"),
-        NavItem(Destination.AddSale, "Ventes", "+"),
-        NavItem(Destination.History, "Historique", "≡"),
-        NavItem(Destination.Settings, "Paramètres", "⚙"),
-    )
-    val backStack by navController.currentBackStackEntryAsState()
-
-    Scaffold(
-        modifier = modifier,
-        bottomBar = {
-            NavigationBar {
-                items.forEach { item ->
-                    NavigationBarItem(
-                        selected = backStack?.destination?.route == item.destination.route,
-                        onClick = { navController.navigate(item.destination.route) {
-                            popUpTo(Destination.Home.route) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        } },
-                        icon = { Text(item.symbol) },
-                        label = { Text(item.label) },
-                    )
-                }
-            }
-        },
-    ) { padding ->
-        NavHost(navController, Destination.Home.route, Modifier.padding(padding)) {
-            composable(Destination.Home.route) { HomeScreen(salesViewModel) { navController.navigate(Destination.AddSale.route) } }
-            composable(Destination.AddSale.route) { AddSaleScreen(salesViewModel) { navController.navigate(Destination.Home.route) { popUpTo(Destination.Home.route) { inclusive = true } } } }
-            composable(Destination.History.route) { HistoryScreen(salesViewModel) }
-            composable(Destination.Settings.route) { SettingsScreen() }
+    val notesViewModel: NotesViewModel = viewModel(factory = NotesViewModel.Factory(NoteRepository(context.applicationContext, database.noteDao())))
+    NavHost(navController, Destination.Home.route, modifier) {
+        composable(Destination.Home.route) {
+            HomeScreen(notesViewModel, { navController.navigate(Destination.Editor.route()) }, { navController.navigate(Destination.Detail.route(it)) })
+        }
+        composable(Destination.Editor.route, arguments = listOf(navArgument("id") { type = NavType.LongType; defaultValue = -1L })) { entry ->
+            EditorScreen(notesViewModel, entry.arguments?.getLong("id")?.takeIf { it >= 0 }, navController::popBackStack)
+        }
+        composable(Destination.Detail.route, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            val id = entry.arguments?.getLong("id") ?: return@composable
+            NoteDetailScreen(notesViewModel, id, navController::popBackStack, { navController.navigate(Destination.Editor.route(id)) })
         }
     }
 }
