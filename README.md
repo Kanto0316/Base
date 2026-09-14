@@ -7,7 +7,15 @@ Application Android légère qui affiche le site distant de PDF by Kanto dans un
 - chargement automatique de `http://kanto0316.github.io/Album` ;
 - JavaScript et stockage DOM activés ;
 - navigation des liens et historique dans la WebView ;
+- sélection d'un compte Google via le sélecteur Android natif, sans popup ni redirection Firebase ;
 - message d'erreur avec action de nouvelle tentative lorsque le site est inaccessible.
+
+## Pont Google natif
+
+Le clic sur le bouton Google existant est intercepté sans modifier sa présentation. Le résultat est
+renvoyé à la page par l'événement JavaScript `android-google-account-result`. Sa propriété `detail`
+contient `{ account, error }` ; `account` expose `id`, `email`, `displayName` et `photoUrl` lorsque la
+sélection réussit. La page peut aussi déclarer `window.onAndroidGoogleAccountResult(result)`.
 
 ## Architecture
 

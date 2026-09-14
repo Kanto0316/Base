@@ -2,10 +2,4 @@
     <string name="app_name">PDF by Kanto</string>
     <string name="site_unavailable">Le site est inaccessible. Vérifiez votre connexion Internet, puis réessayez.</string>
     <string name="retry">Réessayer</string>
-    <string name="google_accounts_title">Comptes Google disponibles</string>
-    <string name="google_accounts_prompt">Aucun compte sélectionné.</string>
-    <string name="google_sign_in">Se connecter avec Google</string>
-    <string name="google_account_selected">Compte sélectionné : %1$s</string>
-    <string name="google_accounts_selection_cancelled">Sélection annulée.</string>
-    <string name="google_accounts_selection_error">Impossible de récupérer le compte sélectionné. Veuillez réessayer.</string>
 </resources>
