@@ -1,21 +1,23 @@
-# NetK File Manager
+# PDF by Kanto
 
-NetK File Manager est un gestionnaire de documents local Android, hors ligne, conçu avec Material Design 3.
+Application Android locale qui transforme une ou plusieurs images en un document PDF.
 
-## Fonctionnalités
+## Fonctionnalités V1
 
-- détection via Android MediaStore des fichiers PDF, Excel (`.xls`, `.xlsx`), Word (`.doc`, `.docx`), texte et image ;
-- navigation par onglets PDF, Excel, Word, TXT et Images ;
-- recherche instantanée par nom dans la catégorie active ;
-- liste compacte indiquant le type, le nom, la date de modification et la taille ;
-- ouverture avec l'application Android compatible choisie par l'utilisateur ;
-- permissions adaptées à Android 8–12 et à l'autorisation Images d'Android 13 ou ultérieur.
+- sélection d'une ou plusieurs images avec Android Photo Picker ;
+- sélection de toutes les images accessibles via MediaStore ;
+- aperçu, nom et compteur des images choisies ;
+- une page PDF par image, avec orientation portrait ou paysage conservée ;
+- nom de fichier automatique `PDF_Kanto_date_heure.pdf` ;
+- historique Room des projets, de leurs images et du chemin du PDF ;
+- consultation d'un ancien projet et ouverture du PDF avec une application compatible ;
+- messages explicites lors d'un refus de permission.
 
-Les documents ne sont jamais copiés ou modifiés : l'application consulte les URI sécurisées indexées par MediaStore.
+Les PDF sont enregistrés dans le dossier Documents propre à l'application. Aucune image source n'est modifiée.
 
 ## Architecture
 
-L'application conserve son package `com.netk.mvola` et utilise Kotlin, MVVM, Repository Pattern et Jetpack Compose avec Material Design 3.
+Le package est `com.netk.app`. L'application utilise Kotlin, Jetpack Compose, Material Design 3, MVVM, un repository et Room.
 
 ## Compiler
 
@@ -25,4 +27,4 @@ Prérequis : JDK 17 et Android SDK 35.
 ./gradlew assembleDebug
 ```
 
-Le dossier `build/` et les APK sont ignorés par Git. Le workflow GitHub Actions existant compile et publie seul l'APK comme artifact.
+Les APK et fichiers générés ne doivent pas être versionnés. Le workflow GitHub Actions compile l'APK et le publie uniquement comme artifact.
