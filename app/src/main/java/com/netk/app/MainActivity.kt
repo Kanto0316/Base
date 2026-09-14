@@ -1,15 +1,20 @@
 package com.netk.app
 
+import android.Manifest
+import android.accounts.AccountManager
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -23,6 +28,7 @@ import android.widget.TextView
 class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var errorView: View
+    private lateinit var accountsStatusView: TextView
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,28 +43,122 @@ class MainActivity : Activity() {
             webViewClient = SiteWebViewClient()
         }
 
-        val root = FrameLayout(this)
-        root.addView(
-            webView,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ),
-        )
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.WHITE)
+            setOnApplyWindowInsetsListener { view, insets ->
+                applySystemBarInsets(view, insets)
+                insets
+            }
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(createAccountsView())
+            addView(
+                webView,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f,
+                ),
+            )
+        }
+        root.addView(content, matchParentLayoutParams())
         errorView = createErrorView()
-        root.addView(
-            errorView,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ),
-        )
+        root.addView(errorView, matchParentLayoutParams())
         setContentView(root)
+        root.requestApplyInsets()
+
+        loadGoogleAccounts()
 
         if (savedInstanceState == null) {
             loadSite()
         } else {
             webView.restoreState(savedInstanceState)
+        }
+    }
+
+    private fun createAccountsView(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        val horizontalPadding = dpToPx(16)
+        val verticalPadding = dpToPx(8)
+        setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
+        setBackgroundColor(Color.WHITE)
+
+        addView(TextView(context).apply {
+            text = getString(R.string.google_accounts_title)
+            textSize = 14f
+            setTextColor(Color.DKGRAY)
+        })
+        accountsStatusView = TextView(context).apply {
+            text = getString(R.string.google_accounts_permission_required)
+            textSize = 13f
+            setTextColor(Color.GRAY)
+            setPadding(0, dpToPx(4), 0, 0)
+            setOnClickListener { requestAccountsPermission() }
+        }
+        addView(accountsStatusView)
+    }
+
+    private fun loadGoogleAccounts() {
+        if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) != PackageManager.PERMISSION_GRANTED) {
+            requestAccountsPermission()
+            return
+        }
+
+        val googleAccounts = try {
+            AccountManager.get(this).getAccountsByType(GOOGLE_ACCOUNT_TYPE)
+        } catch (_: SecurityException) {
+            emptyArray()
+        }
+        accountsStatusView.text = if (googleAccounts.isEmpty()) {
+            getString(R.string.google_accounts_empty)
+        } else {
+            googleAccounts.joinToString(separator = "\n") { it.name }
+        }
+    }
+
+    private fun requestAccountsPermission() {
+        if (checkSelfPermission(Manifest.permission.GET_ACCOUNTS) == PackageManager.PERMISSION_GRANTED) {
+            loadGoogleAccounts()
+        } else {
+            requestPermissions(arrayOf(Manifest.permission.GET_ACCOUNTS), ACCOUNTS_PERMISSION_REQUEST)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != ACCOUNTS_PERMISSION_REQUEST) return
+
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            loadGoogleAccounts()
+        } else {
+            accountsStatusView.text = getString(R.string.google_accounts_permission_denied)
+        }
+    }
+
+    private fun matchParentLayoutParams() = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+    )
+
+    private fun dpToPx(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    @Suppress("DEPRECATION")
+    private fun applySystemBarInsets(view: View, insets: WindowInsets) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val systemBars = insets.getInsets(WindowInsets.Type.systemBars())
+            view.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+        } else {
+            view.setPadding(
+                insets.systemWindowInsetLeft,
+                insets.systemWindowInsetTop,
+                insets.systemWindowInsetRight,
+                insets.systemWindowInsetBottom,
+            )
         }
     }
 
@@ -145,5 +245,7 @@ class MainActivity : Activity() {
 
     private companion object {
         const val SITE_URL = "http://kanto0316.github.io/Album"
+        const val GOOGLE_ACCOUNT_TYPE = "com.google"
+        const val ACCOUNTS_PERMISSION_REQUEST = 1001
     }
 }

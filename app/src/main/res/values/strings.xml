@@ -2,4 +2,8 @@
     <string name="app_name">PDF by Kanto</string>
     <string name="site_unavailable">Le site est inaccessible. Vérifiez votre connexion Internet, puis réessayez.</string>
     <string name="retry">Réessayer</string>
+    <string name="google_accounts_title">Comptes Google disponibles</string>
+    <string name="google_accounts_permission_required">Autorisez l’accès aux comptes pour afficher les comptes Google de cet appareil.</string>
+    <string name="google_accounts_permission_denied">Accès aux comptes refusé. Touchez ici pour autoriser une nouvelle demande.</string>
+    <string name="google_accounts_empty">Aucun compte Google détecté sur cet appareil.</string>
 </resources>
