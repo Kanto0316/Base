@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,7 +65,9 @@ class PdfRepository(private val context: Context) {
         try {
             PdfDocument().use { document ->
                 images.forEachIndexed { index, image -> addPage(document, image.uri, index + 1) }
-                output.outputStream().buffered().use(document::writeTo)
+                output.outputStream().buffered().use { outputStream: OutputStream ->
+                    document.writeTo(outputStream)
+                }
             }
             val project = ProjectEntity(name = name.ifBlank { "Projet $stamp" }, createdAt = System.currentTimeMillis(), pdfPath = output.path)
             val id = dao.insertProject(project)
