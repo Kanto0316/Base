@@ -30,7 +30,9 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun addImages(uris: List<Uri>) = launchWork {
         val incoming = repository.importImages(uris)
         _state.value = _state.value.copy(
-            selectedImages = (_state.value.selectedImages + incoming).distinctBy { it.uri },
+            selectedImages = (_state.value.selectedImages + incoming)
+                .distinctBy { it.localPath }
+                .mapIndexed { index, image -> image.copy(position = index) },
         )
     }
 
@@ -39,12 +41,15 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun removeImage(image: SelectedImage) {
-        _state.value = _state.value.copy(selectedImages = _state.value.selectedImages - image)
+        _state.value = _state.value.copy(
+            selectedImages = (_state.value.selectedImages - image)
+                .mapIndexed { index, item -> item.copy(position = index) },
+        )
     }
 
     fun loadProject(project: ProjectWithImages) {
         _state.value = _state.value.copy(selectedImages = project.orderedImages.map {
-            SelectedImage(Uri.parse(it.uri), it.displayName)
+            SelectedImage(it.localPath, it.displayName, it.position)
         })
     }
 

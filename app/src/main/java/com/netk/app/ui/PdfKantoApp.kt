@@ -175,7 +175,7 @@ private fun ConverterScreen(images: List<SelectedImage>, pick: () -> Unit, selec
                 TextButton(history) { Text("Voir l’historique des projets") }
             }
         } else LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
-            items(images, key = { it.uri.toString() }) { image -> ImageRow(image, remove) }
+            items(images, key = { it.localPath }) { image -> ImageRow(image, remove) }
         }
         NavigationBar {
             NavigationBarItem(true, {}, icon = { Text("＋") }, label = { Text("Créer") })
@@ -187,7 +187,7 @@ private fun ConverterScreen(images: List<SelectedImage>, pick: () -> Unit, selec
 @Composable
 private fun ImageRow(image: SelectedImage, remove: ((SelectedImage) -> Unit)?) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-        ImageThumbnail(image.uri)
+        ImageThumbnail(image.localPath)
         Text(image.name, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (remove != null) TextButton({ remove(image) }) { Text("Retirer") }
     }
@@ -195,11 +195,12 @@ private fun ImageRow(image: SelectedImage, remove: ((SelectedImage) -> Unit)?) {
 }
 
 @Composable
-private fun ImageThumbnail(uri: Uri) {
-    val context = LocalContext.current
-    val bitmap by produceState<android.graphics.Bitmap?>(null, uri) {
+private fun ImageThumbnail(localPath: String) {
+    val bitmap by produceState<android.graphics.Bitmap?>(null, localPath) {
         value = withContext(Dispatchers.IO) {
-            runCatching { context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } }.getOrNull()
+            runCatching {
+                File(localPath).inputStream().buffered().use { BitmapFactory.decodeStream(it) }
+            }.getOrNull()
         }
     }
     Card(Modifier.size(56.dp), shape = RoundedCornerShape(10.dp)) {
@@ -236,7 +237,9 @@ private fun ProjectDetail(project: ProjectWithImages, back: () -> Unit, openPdf:
             Button(openPdf, Modifier.weight(1f)) { Text("Ouvrir le PDF") }
         }
         Text("${formatDate(project.project.createdAt)} · ${project.images.size} images", Modifier.padding(16.dp))
-        LazyColumn { items(project.orderedImages, key = { it.id }) { ImageRow(SelectedImage(Uri.parse(it.uri), it.displayName), null) } }
+        LazyColumn { items(project.orderedImages, key = { it.id }) {
+            ImageRow(SelectedImage(it.localPath, it.displayName, it.position), null)
+        } }
     }
 }
 
