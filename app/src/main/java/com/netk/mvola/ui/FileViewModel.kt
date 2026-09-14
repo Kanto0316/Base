@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 
 data class FileBrowserState(
     val category: FileCategory = FileCategory.PDF,
-    val filesByCategory: Map<FileCategory, List<LocalFile>> = FileCategory.entries.associateWith { emptyList() },
+    val filesByCategory: Map<FileCategory, List<LocalFile>> = FileCategory.values().associateWith { emptyList() },
     val isLoading: Boolean = false,
     val permissionGranted: Boolean = false,
     val selectedTreeUri: Uri? = null,
@@ -64,7 +64,7 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                 throw cancelled
             } catch (error: Exception) {
                 _state.value = _state.value.copy(
-                    filesByCategory = FileCategory.entries.associateWith { emptyList() }, isLoading = false,
+                    filesByCategory = FileCategory.values().associateWith { emptyList() }, isLoading = false,
                     error = error.localizedMessage ?: "Impossible de lire les fichiers locaux.",
                 )
             }

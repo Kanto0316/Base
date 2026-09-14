@@ -10,6 +10,7 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.util.ArrayDeque
 import kotlin.coroutines.coroutineContext
 
 enum class FileCategory(
@@ -61,7 +62,7 @@ data class FileScanResult(
 class FileRepository(private val context: Context) {
     suspend fun scanAll(treeUri: Uri?, includeImages: Boolean): FileScanResult = withContext(Dispatchers.IO) {
         val errors = mutableListOf<String>()
-        val result = FileCategory.entries.associateWith { category ->
+        val result = FileCategory.values().associateWith { category ->
             if (category == FileCategory.IMAGES && !includeImages) {
                 emptyList()
             } else {
@@ -77,7 +78,7 @@ class FileRepository(private val context: Context) {
             runCatching { scanDocumentTree(treeUri) }
                 .onSuccess { treeFiles ->
                     treeFiles.forEach { file ->
-                        FileCategory.entries.firstOrNull { it.matches(file.name, file.mimeType) }
+                        FileCategory.values().firstOrNull { it.matches(file.name, file.mimeType) }
                             ?.let { result.getValue(it).add(file) }
                     }
                 }
