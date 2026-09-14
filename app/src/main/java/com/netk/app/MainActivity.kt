@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -16,6 +17,7 @@ import android.view.WindowInsets
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -25,11 +27,45 @@ import android.widget.TextView
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var errorView: View
-    private lateinit var accountsStatusView: TextView
+    private var accountSelectionInProgress = false
+
+    @Deprecated("Deprecated in Android, retained for the Google account chooser result")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != ACCOUNT_CHOOSER_REQUEST) return
+
+        accountSelectionInProgress = false
+        if (resultCode != RESULT_OK) {
+            returnGoogleAccount(null, GOOGLE_ACCOUNT_CANCELLED)
+            return
+        }
+
+        val account = try {
+            GoogleSignIn.getSignedInAccountFromIntent(data)
+                .getResult(ApiException::class.java)
+        } catch (_: ApiException) {
+            null
+        }
+
+        if (account?.email.isNullOrBlank()) {
+            returnGoogleAccount(null, GOOGLE_ACCOUNT_ERROR)
+        } else {
+            returnGoogleAccount(
+                JSONObject().apply {
+                    put("id", account.id)
+                    put("email", account.email)
+                    put("displayName", account.displayName)
+                    put("photoUrl", account.photoUrl?.toString())
+                },
+                null,
+            )
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +77,7 @@ class MainActivity : Activity() {
             settings.loadsImagesAutomatically = true
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
+            addJavascriptInterface(GoogleAccountBridge(), GOOGLE_BRIDGE_NAME)
             webViewClient = SiteWebViewClient()
         }
 
@@ -53,7 +90,6 @@ class MainActivity : Activity() {
         }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(createAccountsView())
             addView(
                 webView,
                 LinearLayout.LayoutParams(
@@ -69,9 +105,6 @@ class MainActivity : Activity() {
         setContentView(root)
         root.requestApplyInsets()
 
-        accountsStatusView.text = savedInstanceState?.getCharSequence(ACCOUNTS_STATUS_STATE)
-            ?: getString(R.string.google_accounts_prompt)
-
         if (savedInstanceState == null) {
             loadSite()
         } else {
@@ -79,32 +112,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun createAccountsView(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        val horizontalPadding = dpToPx(16)
-        val verticalPadding = dpToPx(8)
-        setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
-        setBackgroundColor(Color.WHITE)
-
-        addView(TextView(context).apply {
-            text = getString(R.string.google_accounts_title)
-            textSize = 14f
-            setTextColor(Color.DKGRAY)
-        })
-        accountsStatusView = TextView(context).apply {
-            text = getString(R.string.google_accounts_prompt)
-            textSize = 13f
-            setTextColor(Color.GRAY)
-            setPadding(0, dpToPx(4), 0, 0)
-        }
-        addView(accountsStatusView)
-        addView(Button(context).apply {
-            text = getString(R.string.google_sign_in)
-            setOnClickListener { showGoogleAccountChooser() }
-        })
-    }
-
     private fun showGoogleAccountChooser() {
+        if (accountSelectionInProgress || !isTrustedSite(webView.url)) return
+        accountSelectionInProgress = true
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .build()
@@ -112,27 +122,17 @@ class MainActivity : Activity() {
         startActivityForResult(pickerIntent, ACCOUNT_CHOOSER_REQUEST)
     }
 
-    @Deprecated("Deprecated in Android, retained for the platform account chooser result")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != ACCOUNT_CHOOSER_REQUEST) return
-
-        if (resultCode != RESULT_OK) {
-            accountsStatusView.text = getString(R.string.google_accounts_selection_cancelled)
-            return
+    private fun returnGoogleAccount(account: JSONObject?, error: String?) {
+        if (!isTrustedSite(webView.url)) return
+        val result = JSONObject().apply {
+            put("account", account ?: JSONObject.NULL)
+            put("error", error ?: JSONObject.NULL)
         }
-
-        val email = try {
-            GoogleSignIn.getSignedInAccountFromIntent(data)
-                .getResult(ApiException::class.java)
-                .email
-        } catch (_: ApiException) {
-            null
-        }
-        accountsStatusView.text = if (email.isNullOrBlank()) {
-            getString(R.string.google_accounts_selection_error)
-        } else {
-            getString(R.string.google_account_selected, email)
+        webView.post {
+            webView.evaluateJavascript(
+                "window.__receiveAndroidGoogleAccount(${result});",
+                null,
+            )
         }
     }
 
@@ -140,8 +140,6 @@ class MainActivity : Activity() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
     )
-
-    private fun dpToPx(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     @Suppress("DEPRECATION")
     private fun applySystemBarInsets(view: View, insets: WindowInsets) {
@@ -200,7 +198,6 @@ class MainActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         webView.saveState(outState)
-        outState.putCharSequence(ACCOUNTS_STATUS_STATE, accountsStatusView.text)
         super.onSaveInstanceState(outState)
     }
 
@@ -221,7 +218,18 @@ class MainActivity : Activity() {
     }
 
     private inner class SiteWebViewClient : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            if (request.url.host == GOOGLE_ACCOUNTS_HOST) {
+                view.post { showGoogleAccountChooser() }
+                return true
+            }
+            return false
+        }
+
+        override fun onPageFinished(view: WebView, url: String) {
+            super.onPageFinished(view, url)
+            if (isTrustedSite(url)) view.evaluateJavascript(GOOGLE_BUTTON_BRIDGE_SCRIPT, null)
+        }
 
         override fun onReceivedError(
             view: WebView,
@@ -240,9 +248,61 @@ class MainActivity : Activity() {
         }
     }
 
+    private inner class GoogleAccountBridge {
+        @JavascriptInterface
+        fun openAccountChooser() {
+            webView.post { showGoogleAccountChooser() }
+        }
+    }
+
+    private fun isTrustedSite(url: String?): Boolean {
+        val uri = url?.let(Uri::parse) ?: return false
+        return uri.host == SITE_HOST && (uri.scheme == "http" || uri.scheme == "https")
+    }
+
     private companion object {
         const val SITE_URL = "http://kanto0316.github.io/Album"
+        const val SITE_HOST = "kanto0316.github.io"
+        const val GOOGLE_ACCOUNTS_HOST = "accounts.google.com"
         const val ACCOUNT_CHOOSER_REQUEST = 1002
-        const val ACCOUNTS_STATUS_STATE = "accounts_status"
+        const val GOOGLE_BRIDGE_NAME = "AndroidGoogleSignIn"
+        const val GOOGLE_ACCOUNT_CANCELLED = "cancelled"
+        const val GOOGLE_ACCOUNT_ERROR = "account_unavailable"
+
+        val GOOGLE_BUTTON_BRIDGE_SCRIPT = """
+            (() => {
+              if (window.__androidGoogleAccountBridgeInstalled) return;
+              window.__androidGoogleAccountBridgeInstalled = true;
+
+              window.__receiveAndroidGoogleAccount = result => {
+                window.dispatchEvent(new CustomEvent('android-google-account-result', {
+                  detail: result
+                }));
+                if (typeof window.onAndroidGoogleAccountResult === 'function') {
+                  window.onAndroidGoogleAccountResult(result);
+                }
+              };
+
+              document.addEventListener('click', event => {
+                const target = event.target instanceof Element
+                  ? event.target.closest('button, a, [role="button"]')
+                  : null;
+                if (!target) return;
+                const description = [
+                  target.id,
+                  target.className,
+                  target.getAttribute('href'),
+                  target.getAttribute('aria-label'),
+                  target.getAttribute('data-provider'),
+                  target.textContent
+                ].filter(Boolean).join(' ').toLowerCase();
+                if (!description.includes('google')) return;
+
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                window.AndroidGoogleSignIn.openAccountChooser();
+              }, true);
+            })();
+        """.trimIndent()
     }
 }
