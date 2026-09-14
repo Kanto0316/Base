@@ -143,7 +143,7 @@ fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: FileViewModel = vie
 
 @Composable
 private fun FileTabs(selected: FileCategory, onSelected: (FileCategory) -> Unit) {
-    val categories = FileCategory.entries
+    val categories = FileCategory.values()
     TabRow(selectedTabIndex = categories.indexOf(selected)) {
         categories.forEach { category ->
             Tab(selected == category, { onSelected(category) }, text = { Text(category.label, maxLines = 1) })
@@ -209,7 +209,7 @@ private fun DiagnosticPanel(state: FileBrowserState) {
             Text("Diagnostic", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             Text(
                 "Permission stockage/images : ${if (state.permissionGranted) "accordée" else "non accordée"} · " +
-                    FileCategory.entries.joinToString(" · ") { "${it.label}: ${state.filesByCategory[it].orEmpty().size}" },
+                    FileCategory.values().joinToString(" · ") { "${it.label}: ${state.filesByCategory[it].orEmpty().size}" },
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
