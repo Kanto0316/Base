@@ -28,7 +28,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val projects = repository.observeProjects().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun addImages(uris: List<Uri>) = launchWork {
-        val incoming = repository.resolveImages(uris)
+        val incoming = repository.importImages(uris)
         _state.value = _state.value.copy(
             selectedImages = (_state.value.selectedImages + incoming).distinctBy { it.uri },
         )
