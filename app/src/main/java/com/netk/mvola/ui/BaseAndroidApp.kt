@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -23,6 +24,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -30,6 +33,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -76,17 +80,30 @@ fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: MusicViewModel = vi
     Scaffold(
         modifier = modifier,
         topBar = { TopAppBar(title = { Text("NetK Music", fontWeight = FontWeight.Bold) }) },
-        bottomBar = { NavigationBar {
-            listOf("Bibliothèque", "Lecteur", "Favoris", "Playlists").forEachIndexed { index, label ->
-                NavigationBarItem(selected = page == index, onClick = { page = index }, icon = { Text(listOf("♫", "▶", "♥", "≡")[index]) }, label = { Text(label) })
+        bottomBar = {
+            Column {
+                if (page == 0 && playback.mediaId != null) {
+                    MiniPlayer(
+                        state = playback,
+                        openPlayer = { page = 1 },
+                        toggle = viewModel::togglePlay,
+                        previous = viewModel::previous,
+                        next = viewModel::next,
+                    )
+                }
+                NavigationBar {
+                    listOf("Bibliothèque", "Lecteur", "Favoris", "Playlists").forEachIndexed { index, label ->
+                        NavigationBarItem(selected = page == index, onClick = { page = index }, icon = { Text(listOf("♫", "▶", "♥", "≡")[index]) }, label = { Text(label) })
+                    }
+                }
             }
-        } },
+        },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (page) {
-                0 -> LibraryPage(songs, loading, audioGranted, { permissionLauncher.launch(requiredPermissions()) }, viewModel::play, viewModel::toggleFavorite, favorites.toSet(), playlists, viewModel::addToPlaylist)
+                0 -> LibraryPage(songs, loading, audioGranted, playback.mediaId, { permissionLauncher.launch(requiredPermissions()) }, viewModel::play)
                 1 -> PlayerPage(playback, viewModel::togglePlay, viewModel::previous, viewModel::next, viewModel::seekTo)
-                2 -> SongList(songs.filter { it.uri in favorites }, "Aucun favori", viewModel::play, viewModel::toggleFavorite, favorites.toSet(), playlists, viewModel::addToPlaylist)
+                2 -> SongList(songs.filter { it.uri in favorites }, "Aucun favori", playback.mediaId, viewModel::play)
                 else -> PlaylistsPage(playlists, viewModel::createPlaylist)
             }
             error?.let { message -> AlertDialog(onDismissRequest = viewModel::clearError, confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }, title = { Text("Une erreur est survenue") }, text = { Text(message) }) }
@@ -95,38 +112,59 @@ fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: MusicViewModel = vi
 }
 
 @Composable
-private fun LibraryPage(songs: List<Song>, loading: Boolean, granted: Boolean, requestPermission: () -> Unit, play: (Song) -> Unit, favorite: (Song) -> Unit, favorites: Set<String>, playlists: List<PlaylistEntity>, addToPlaylist: (Long, Song) -> Unit) {
+private fun LibraryPage(songs: List<Song>, loading: Boolean, granted: Boolean, currentMediaId: String?, requestPermission: () -> Unit, play: (Song) -> Unit) {
     when {
         !granted -> EmptyState("Autorisez l'accès aux fichiers audio pour détecter automatiquement vos musiques.") { Button(onClick = requestPermission) { Text("Autoriser l'accès") } }
         loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        else -> SongList(songs, "Aucune musique MP3, WAV, M4A ou FLAC trouvée sur cet appareil.", play, favorite, favorites, playlists, addToPlaylist)
+        else -> SongList(songs, "Aucune musique MP3, WAV, M4A ou FLAC trouvée sur cet appareil.", currentMediaId, play)
     }
 }
 
 @Composable
-private fun SongList(songs: List<Song>, emptyText: String, play: (Song) -> Unit, favorite: (Song) -> Unit, favorites: Set<String>, playlists: List<PlaylistEntity>, addToPlaylist: (Long, Song) -> Unit) {
-    var playlistSong by remember { mutableStateOf<Song?>(null) }
+private fun SongList(songs: List<Song>, emptyText: String, currentMediaId: String?, play: (Song) -> Unit) {
     if (songs.isEmpty()) EmptyState(emptyText)
-    else LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    else LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
         items(songs, key = { it.uri }) { song ->
-            Card(Modifier.fillMaxWidth().clickable { play(song) }) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(song.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${song.artist} • ${song.album}", maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatDuration(song.durationMs), style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { playlistSong = song }) { Text("+ Playlist") }
-                        TextButton(onClick = { favorite(song) }) { Text(if (song.uri in favorites) "♥" else "♡") }
+            val isCurrent = song.uri == currentMediaId
+            Surface(
+                color = if (isCurrent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth().clickable { play(song) },
+            ) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (isCurrent) "♫" else "♪",
+                        modifier = Modifier.size(32.dp),
+                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Column(Modifier.weight(1f).padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(song.title, style = MaterialTheme.typography.titleSmall, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (song.artist.isNotBlank()) {
+                            Text(song.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
+                    Text(formatDuration(song.durationMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            HorizontalDivider(Modifier.padding(start = 58.dp), color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
-    playlistSong?.let { song -> AlertDialog(onDismissRequest = { playlistSong = null }, title = { Text("Ajouter à une playlist") }, text = {
-        if (playlists.isEmpty()) Text("Créez d'abord une playlist dans l'onglet Playlists.")
-        else Column { playlists.forEach { item -> TextButton(onClick = { addToPlaylist(item.id, song); playlistSong = null }) { Text(item.name) } } }
-    }, confirmButton = { TextButton(onClick = { playlistSong = null }) { Text("Fermer") } }) }
+}
+
+@Composable
+private fun MiniPlayer(state: PlaybackState, openPlayer: () -> Unit, toggle: () -> Unit, previous: () -> Unit, next: () -> Unit) {
+    Surface(tonalElevation = 3.dp, shadowElevation = 6.dp, modifier = Modifier.fillMaxWidth().clickable(onClick = openPlayer)) {
+        Row(Modifier.fillMaxWidth().height(72.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("♫", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.headlineSmall)
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(state.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (state.artist.isNotBlank()) Text(state.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = previous) { Text("⏮", style = MaterialTheme.typography.titleLarge) }
+            IconButton(onClick = toggle) { Text(if (state.isPlaying) "Ⅱ" else "▶", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary) }
+            IconButton(onClick = next) { Text("⏭", style = MaterialTheme.typography.titleLarge) }
+        }
+    }
 }
 
 @Composable
