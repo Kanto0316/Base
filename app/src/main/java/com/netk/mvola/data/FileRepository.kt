@@ -39,7 +39,7 @@ enum class FileCategory(
 
     fun matches(name: String, mimeType: String?): Boolean {
         val extension = name.substringAfterLast('.', "").lowercase()
-        return extension in extensions || mimeType?.lowercase() in mimeTypes
+        return extension in extensions || mimeType?.lowercase()?.let(mimeTypes::contains) == true
     }
 }
 
