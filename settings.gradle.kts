@@ -14,6 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BaseAndroid"
+rootProject.name = "PDFByKanto"
 include(":app")
-
