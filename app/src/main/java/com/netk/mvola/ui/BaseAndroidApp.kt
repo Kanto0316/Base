@@ -1,6 +1,8 @@
 package com.netk.mvola.ui
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,36 +13,30 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,150 +49,152 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.netk.mvola.data.Song
-import com.netk.mvola.data.local.PlaylistEntity
+import com.netk.mvola.data.FileCategory
+import com.netk.mvola.data.LocalFile
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: MusicViewModel = viewModel()) {
+fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: FileViewModel = viewModel()) {
     val context = LocalContext.current
-    val songs by viewModel.songs.collectAsStateWithLifecycle()
-    val favorites by viewModel.favorites.collectAsStateWithLifecycle()
-    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
-    val playback by viewModel.playback.collectAsStateWithLifecycle()
-    val loading by viewModel.loading.collectAsStateWithLifecycle()
-    val error by viewModel.error.collectAsStateWithLifecycle()
-    var page by remember { mutableIntStateOf(0) }
-    var audioGranted by remember { mutableStateOf(hasAudioPermission(context)) }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        audioGranted = result[audioPermission()] == true || hasAudioPermission(context)
-        if (audioGranted) viewModel.scan()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var query by remember { mutableStateOf("") }
+    var openError by remember { mutableStateOf<String?>(null) }
+    var permissionGranted by remember(state.category) { mutableStateOf(hasPermissionFor(context, state.category)) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionGranted = granted || hasPermissionFor(context, state.category)
+        if (permissionGranted) viewModel.scan()
     }
-    LaunchedEffect(Unit) {
-        if (audioGranted) viewModel.scan() else permissionLauncher.launch(requiredPermissions())
+    LaunchedEffect(Unit) { if (permissionGranted) viewModel.scan() }
+    val visibleFiles = remember(state.files, query) {
+        state.files.filter { it.name.contains(query.trim(), ignoreCase = true) }
     }
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("NetK Music", fontWeight = FontWeight.Bold) }) },
-        bottomBar = {
+        topBar = {
             Column {
-                if (page == 0 && playback.mediaId != null) {
-                    MiniPlayer(
-                        state = playback,
-                        openPlayer = { page = 1 },
-                        toggle = viewModel::togglePlay,
-                        previous = viewModel::previous,
-                        next = viewModel::next,
-                    )
-                }
-                NavigationBar {
-                    listOf("Bibliothèque", "Lecteur", "Favoris", "Playlists").forEachIndexed { index, label ->
-                        NavigationBarItem(selected = page == index, onClick = { page = index }, icon = { Text(listOf("♫", "▶", "♥", "≡")[index]) }, label = { Text(label) })
-                    }
+                TopAppBar(title = { Text("NetK File Manager", fontWeight = FontWeight.Bold) })
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                    placeholder = { Text("Rechercher un fichier") }, leadingIcon = { Text("⌕") },
+                    singleLine = true, shape = RoundedCornerShape(24.dp),
+                )
+                FileTabs(state.category) { category ->
+                    query = ""
+                    permissionGranted = hasPermissionFor(context, category)
+                    viewModel.selectCategory(category)
+                    requiredPermission(category)?.takeIf { !permissionGranted }?.let(permissionLauncher::launch)
                 }
             }
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            when (page) {
-                0 -> LibraryPage(songs, loading, audioGranted, playback.mediaId, { permissionLauncher.launch(requiredPermissions()) }, viewModel::play)
-                1 -> PlayerPage(playback, viewModel::togglePlay, viewModel::previous, viewModel::next, viewModel::seekTo)
-                2 -> SongList(songs.filter { it.uri in favorites }, "Aucun favori", playback.mediaId, viewModel::play)
-                else -> PlaylistsPage(playlists, viewModel::createPlaylist)
-            }
-            error?.let { message -> AlertDialog(onDismissRequest = viewModel::clearError, confirmButton = { TextButton(onClick = viewModel::clearError) { Text("OK") } }, title = { Text("Une erreur est survenue") }, text = { Text(message) }) }
-        }
-    }
-}
-
-@Composable
-private fun LibraryPage(songs: List<Song>, loading: Boolean, granted: Boolean, currentMediaId: String?, requestPermission: () -> Unit, play: (Song) -> Unit) {
-    when {
-        !granted -> EmptyState("Autorisez l'accès aux fichiers audio pour détecter automatiquement vos musiques.") { Button(onClick = requestPermission) { Text("Autoriser l'accès") } }
-        loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        else -> SongList(songs, "Aucune musique MP3, WAV, M4A ou FLAC trouvée sur cet appareil.", currentMediaId, play)
-    }
-}
-
-@Composable
-private fun SongList(songs: List<Song>, emptyText: String, currentMediaId: String?, play: (Song) -> Unit) {
-    if (songs.isEmpty()) EmptyState(emptyText)
-    else LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-        items(songs, key = { it.uri }) { song ->
-            val isCurrent = song.uri == currentMediaId
-            Surface(
-                color = if (isCurrent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth().clickable { play(song) },
-            ) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (isCurrent) "♫" else "♪",
-                        modifier = Modifier.size(32.dp),
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Column(Modifier.weight(1f).padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(song.title, style = MaterialTheme.typography.titleSmall, fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (song.artist.isNotBlank()) {
-                            Text(song.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+            when {
+                !permissionGranted -> PermissionState { requiredPermission(state.category)?.let(permissionLauncher::launch) }
+                state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                visibleFiles.isEmpty() -> EmptyState(if (query.isBlank()) {
+                    "Aucun fichier ${state.category.label} trouvé sur cet appareil."
+                } else "Aucun résultat pour « ${query.trim()} ».")
+                else -> FileList(visibleFiles, state.category) { file ->
+                    openFile(context, file).onFailure {
+                        openError = "Aucune application compatible ne permet d’ouvrir ${file.name}."
                     }
-                    Text(formatDuration(song.durationMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            HorizontalDivider(Modifier.padding(start = 58.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        }
+    }
+
+    (state.error ?: openError)?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError(); openError = null },
+            title = { Text("Action impossible") }, text = { Text(message) },
+            confirmButton = { TextButton(onClick = { viewModel.clearError(); openError = null }) { Text("OK") } },
+        )
+    }
+}
+
+@Composable
+private fun FileTabs(selected: FileCategory, onSelected: (FileCategory) -> Unit) {
+    val categories = FileCategory.entries
+    TabRow(selectedTabIndex = categories.indexOf(selected)) {
+        categories.forEach { category ->
+            Tab(selected == category, { onSelected(category) }, text = { Text(category.label, maxLines = 1) })
         }
     }
 }
 
 @Composable
-private fun MiniPlayer(state: PlaybackState, openPlayer: () -> Unit, toggle: () -> Unit, previous: () -> Unit, next: () -> Unit) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 6.dp, modifier = Modifier.fillMaxWidth().clickable(onClick = openPlayer)) {
-        Row(Modifier.fillMaxWidth().height(72.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("♫", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.headlineSmall)
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(state.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (state.artist.isNotBlank()) Text(state.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun FileList(files: List<LocalFile>, category: FileCategory, open: (LocalFile) -> Unit) {
+    LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
+        items(files, key = { it.uri.toString() }) { file ->
+            Row(
+                Modifier.fillMaxWidth().clickable { open(file) }.padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(Modifier.size(42.dp), RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(category.badge, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                    Text(
+                        "${formatDate(file.modifiedAtMillis)} · ${formatSize(file.sizeBytes)}",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            IconButton(onClick = previous) { Text("⏮", style = MaterialTheme.typography.titleLarge) }
-            IconButton(onClick = toggle) { Text(if (state.isPlaying) "Ⅱ" else "▶", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary) }
-            IconButton(onClick = next) { Text("⏭", style = MaterialTheme.typography.titleLarge) }
+            HorizontalDivider(Modifier.padding(start = 70.dp), color = MaterialTheme.colorScheme.outlineVariant)
         }
     }
 }
 
 @Composable
-private fun PlayerPage(state: PlaybackState, toggle: () -> Unit, previous: () -> Unit, next: () -> Unit, seek: (Long) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(if (state.title.isBlank()) "Aucune lecture" else state.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(state.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(32.dp))
-        Slider(value = state.positionMs.coerceAtMost(state.durationMs).toFloat(), onValueChange = { seek(it.toLong()) }, valueRange = 0f..state.durationMs.coerceAtLeast(1).toFloat(), enabled = state.mediaId != null)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(formatDuration(state.positionMs)); Text(formatDuration(state.durationMs)) }
-        Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = previous, enabled = state.mediaId != null) { Text("Précédent") }
-            Button(onClick = toggle, enabled = state.mediaId != null) { Text(if (state.isPlaying) "Pause" else "Lecture") }
-            OutlinedButton(onClick = next, enabled = state.mediaId != null) { Text("Suivant") }
-        }
+private fun PermissionState(request: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("Autorisez l’accès au stockage pour afficher les fichiers de cette catégorie.")
+        Button(request, Modifier.padding(top = 16.dp)) { Text("Autoriser l’accès") }
     }
 }
 
 @Composable
-private fun PlaylistsPage(playlists: List<PlaylistEntity>, create: (String) -> Unit) {
-    var dialog by remember { mutableStateOf(false) }; var name by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = { dialog = true }, modifier = Modifier.fillMaxWidth()) { Text("Créer une playlist") }
-        if (playlists.isEmpty()) Text("Aucune playlist", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        playlists.forEach { Card(Modifier.fillMaxWidth()) { Text(it.name, Modifier.padding(18.dp), style = MaterialTheme.typography.titleMedium) } }
+private fun EmptyState(message: String) {
+    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    if (dialog) AlertDialog(onDismissRequest = { dialog = false }, title = { Text("Nouvelle playlist") }, text = { OutlinedTextField(name, { name = it }, label = { Text("Nom") }, singleLine = true) }, confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { create(name); name = ""; dialog = false }) { Text("Créer") } }, dismissButton = { TextButton(onClick = { dialog = false }) { Text("Annuler") } })
 }
 
-@Composable private fun EmptyState(text: String, action: @Composable (() -> Unit)? = null) { Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant); action?.let { Spacer(Modifier.height(16.dp)); it() } } }
-private fun formatDuration(ms: Long): String { val seconds = ms.coerceAtLeast(0) / 1000; return String.format(Locale.getDefault(), "%d:%02d", seconds / 60, seconds % 60) }
-private fun audioPermission() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-private fun requiredPermissions() = buildList { add(audioPermission()); if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS) }.toTypedArray()
-private fun hasAudioPermission(context: android.content.Context) = ContextCompat.checkSelfPermission(context, audioPermission()) == PackageManager.PERMISSION_GRANTED
+private fun openFile(context: Context, file: LocalFile): Result<Unit> = runCatching {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(file.uri, file.mimeType ?: "*/*")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Ouvrir avec"))
+}
+
+private fun requiredPermission(category: FileCategory): String? = when {
+    Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2 -> Manifest.permission.READ_EXTERNAL_STORAGE
+    category == FileCategory.IMAGES -> Manifest.permission.READ_MEDIA_IMAGES
+    else -> null
+}
+
+private fun hasPermissionFor(context: Context, category: FileCategory) = requiredPermission(category)?.let {
+    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+} ?: true
+
+private fun formatDate(timestamp: Long) =
+    DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault()).format(Date(timestamp))
+
+private fun formatSize(bytes: Long): String = when {
+    bytes < 1_024 -> "$bytes o"
+    bytes < 1_048_576 -> String.format(Locale.getDefault(), "%.1f Ko", bytes / 1_024.0)
+    bytes < 1_073_741_824 -> String.format(Locale.getDefault(), "%.1f Mo", bytes / 1_048_576.0)
+    else -> String.format(Locale.getDefault(), "%.1f Go", bytes / 1_073_741_824.0)
+}
