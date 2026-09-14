@@ -6,4 +6,8 @@
     <string name="google_accounts_permission_required">Autorisez l’accès aux comptes pour afficher les comptes Google de cet appareil.</string>
     <string name="google_accounts_permission_denied">Accès aux comptes refusé. Touchez ici pour autoriser une nouvelle demande.</string>
     <string name="google_accounts_empty">Aucun compte Google détecté sur cet appareil.</string>
+    <string name="google_accounts_chooser_description">Sélectionnez un compte Google présent sur cet appareil.</string>
+    <string name="google_account_selected">Compte sélectionné : %1$s</string>
+    <string name="google_accounts_selection_cancelled">Sélection annulée. Touchez ici pour choisir un compte Google.</string>
+    <string name="google_accounts_selection_error">Impossible de récupérer le compte sélectionné. Touchez ici pour réessayer.</string>
 </resources>
