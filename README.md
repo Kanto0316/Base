@@ -14,8 +14,9 @@ Application Android légère qui affiche le site distant de PDF by Kanto dans un
 
 Le clic sur le bouton Google existant est intercepté sans modifier sa présentation. Le résultat est
 renvoyé à la page par l'événement JavaScript `android-google-account-result`. Sa propriété `detail`
-contient `{ account, error }` ; `account` expose `id`, `email`, `displayName` et `photoUrl` lorsque la
-sélection réussit. La page peut aussi déclarer `window.onAndroidGoogleAccountResult(result)`.
+contient `{ account, error }` ; `account` expose `email` et `type` lorsque la sélection réussit. La
+page peut aussi déclarer `window.onAndroidGoogleAccountResult(result)`. L'adresse sélectionnée est
+affichée sous le bouton Google existant.
 
 ## Architecture
 
