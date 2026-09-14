@@ -63,11 +63,14 @@ class PdfRepository(private val context: Context) {
         val output = File(directory, "PDF_Kanto_$stamp.pdf")
 
         try {
-            PdfDocument().use { document ->
+            val document = PdfDocument()
+            try {
                 images.forEachIndexed { index, image -> addPage(document, image.uri, index + 1) }
                 output.outputStream().buffered().use { outputStream: OutputStream ->
                     document.writeTo(outputStream)
                 }
+            } finally {
+                document.close()
             }
             val project = ProjectEntity(name = name.ifBlank { "Projet $stamp" }, createdAt = System.currentTimeMillis(), pdfPath = output.path)
             val id = dao.insertProject(project)
