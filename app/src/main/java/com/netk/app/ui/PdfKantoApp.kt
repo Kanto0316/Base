@@ -84,9 +84,6 @@ fun PdfKantoApp(viewModel: PdfViewModel = viewModel()) {
     var projectName by remember { mutableStateOf("") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
-        uris.forEach { uri ->
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        }
         if (uris.isNotEmpty()) viewModel.addImages(uris)
     }
     var permissionRefused by remember { mutableStateOf(false) }

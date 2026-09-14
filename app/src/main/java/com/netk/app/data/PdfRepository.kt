@@ -2,6 +2,7 @@ package com.netk.app.data
 
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -10,6 +11,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +22,7 @@ import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 data class SelectedImage(val uri: Uri, val name: String)
 
@@ -28,8 +31,8 @@ class PdfRepository(private val context: Context) {
 
     fun observeProjects(): Flow<List<ProjectWithImages>> = dao.observeProjects()
 
-    suspend fun resolveImages(uris: List<Uri>): List<SelectedImage> = withContext(Dispatchers.IO) {
-        uris.distinct().map { uri -> SelectedImage(uri, displayName(uri)) }
+    suspend fun importImages(uris: List<Uri>): List<SelectedImage> = withContext(Dispatchers.IO) {
+        uris.distinct().map(::importImage)
     }
 
     suspend fun allDeviceImages(): List<SelectedImage> = withContext(Dispatchers.IO) {
@@ -45,13 +48,48 @@ class PdfRepository(private val context: Context) {
             val name = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
             buildList {
                 while (cursor.moveToNext()) {
-                    add(SelectedImage(
-                        ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cursor.getLong(id)),
-                        cursor.getString(name) ?: "Image",
-                    ))
+                    val uri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        cursor.getLong(id),
+                    )
+                    add(importImage(uri, cursor.getString(name) ?: "Image"))
                 }
             }
         }.orEmpty()
+    }
+
+    /**
+     * Keeps the provider grant when it supports persistent grants, then creates an
+     * app-owned copy. All subsequent previews and PDF reads use this local URI.
+     */
+    private fun importImage(sourceUri: Uri, knownName: String? = null): SelectedImage {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                sourceUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+
+        val name = knownName ?: displayName(sourceUri)
+        val directory = File(context.filesDir, SELECTED_IMAGES_DIRECTORY)
+        check(directory.exists() || directory.mkdirs()) { "Impossible de sauvegarder les images sélectionnées." }
+        val extension = MimeTypeMap.getSingleton()
+            .getExtensionFromMimeType(context.contentResolver.getType(sourceUri))
+            ?.takeIf { it.matches(Regex("[A-Za-z0-9]+")) }
+        val target = File(directory, UUID.randomUUID().toString() + extension?.let { ".$it" }.orEmpty())
+        val temporary = File(directory, "${target.name}.tmp")
+
+        try {
+            context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                temporary.outputStream().buffered().use { output -> input.copyTo(output) }
+            } ?: throw FileNotFoundException("Image inaccessible : $name")
+            check(temporary.renameTo(target)) { "Impossible de sauvegarder l’image : $name" }
+        } catch (error: Exception) {
+            temporary.delete()
+            target.delete()
+            throw error
+        }
+        return SelectedImage(Uri.fromFile(target), name)
     }
 
     suspend fun createProject(name: String, images: List<SelectedImage>): ProjectEntity = withContext(Dispatchers.IO) {
@@ -122,5 +160,8 @@ class PdfRepository(private val context: Context) {
     )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
         ?: uri.lastPathSegment ?: "Image"
 
-    private companion object { const val MAX_PAGE_SIDE = 2480 }
+    private companion object {
+        const val MAX_PAGE_SIDE = 2480
+        const val SELECTED_IMAGES_DIRECTORY = "selected_images"
+    }
 }
