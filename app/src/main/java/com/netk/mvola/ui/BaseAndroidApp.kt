@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,12 +64,22 @@ fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: FileViewModel = vie
     val state by viewModel.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var openError by remember { mutableStateOf<String?>(null) }
-    var permissionGranted by remember(state.category) { mutableStateOf(hasPermissionFor(context, state.category)) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        permissionGranted = grants.values.any { it } || hasPermissionFor(context, state.category)
-        if (permissionGranted) viewModel.scan()
+        viewModel.updatePermission(grants.values.any { it } || hasImagePermission(context))
     }
-    LaunchedEffect(Unit) { if (permissionGranted) viewModel.scan() }
+    val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }.onFailure { error -> Log.w(FILE_OPEN_TAG, "Could not persist access to $it", error) }
+            viewModel.selectDocumentTree(it)
+        }
+    }
+    LaunchedEffect(Unit) {
+        val currentPermissionGranted = hasPermissionFor(context, state.category)
+        viewModel.updatePermission(hasImagePermission(context), scanNow = currentPermissionGranted)
+        if (!currentPermissionGranted) permissionLauncher.launch(requiredPermissions(state.category))
+    }
     val visibleFiles = remember(state.files, query) {
         state.files.filter { it.name.contains(query.trim(), ignoreCase = true) }
     }
@@ -86,29 +97,34 @@ fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: FileViewModel = vie
                 )
                 FileTabs(state.category) { category ->
                     query = ""
-                    permissionGranted = hasPermissionFor(context, category)
-                    viewModel.selectCategory(category, scanNow = permissionGranted)
-                    requiredPermissions(category).takeIf { !permissionGranted && it.isNotEmpty() }
+                    viewModel.selectCategory(category)
+                    requiredPermissions(category).takeIf { !hasPermissionFor(context, category) && it.isNotEmpty() }
                         ?.let(permissionLauncher::launch)
                 }
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                !permissionGranted -> PermissionState {
-                    requiredPermissions(state.category).takeIf { it.isNotEmpty() }?.let(permissionLauncher::launch)
-                }
-                state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                visibleFiles.isEmpty() -> EmptyState(if (query.isBlank()) {
-                    "Aucun fichier ${state.category.label} trouvé sur cet appareil."
-                } else "Aucun résultat pour « ${query.trim()} ».")
-                else -> FileList(visibleFiles, state.category) { file ->
-                    openFile(context, file).onFailure {
-                        openError = if (it is NoFileViewerException) {
-                            "Aucune application compatible n’est installée pour ouvrir ${file.name}."
-                        } else {
-                            "Impossible d’ouvrir ${file.name} : ${it.localizedMessage ?: "erreur inconnue"}."
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            DiagnosticPanel(state)
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                when {
+                    !hasPermissionFor(context, state.category) -> PermissionState {
+                        requiredPermissions(state.category).takeIf { it.isNotEmpty() }?.let(permissionLauncher::launch)
+                    }
+                    state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    visibleFiles.isEmpty() -> EmptyState(
+                        message = if (query.isBlank()) "Aucun fichier ${state.category.label} trouvé sur cet appareil."
+                        else "Aucun résultat pour « ${query.trim()} ».",
+                        showFolderAction = query.isBlank(),
+                        chooseFolder = { treeLauncher.launch(state.selectedTreeUri) },
+                    )
+                    else -> FileList(visibleFiles, state.category) { file ->
+                        openFile(context, file).onFailure {
+                            openError = if (it is NoFileViewerException) {
+                                "Aucune application compatible n’est installée pour ouvrir ${file.name}."
+                            } else {
+                                "Impossible d’ouvrir ${file.name} : ${it.localizedMessage ?: "erreur inconnue"}."
+                            }
                         }
                     }
                 }
@@ -173,13 +189,40 @@ private fun PermissionState(request: () -> Unit) {
 }
 
 @Composable
-private fun EmptyState(message: String) {
-    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+private fun EmptyState(message: String, showFolderAction: Boolean, chooseFolder: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
         Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (showFolderAction) {
+            Button(chooseFolder, Modifier.padding(top = 16.dp)) { Text("Choisir un dossier à analyser") }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticPanel(state: FileBrowserState) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text("Diagnostic", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "Permission stockage/images : ${if (state.permissionGranted) "accordée" else "non accordée"} · " +
+                    FileCategory.entries.joinToString(" · ") { "${it.label}: ${state.filesByCategory[it].orEmpty().size}" },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Source dossier : ${if (state.selectedTreeUri == null) "non sélectionnée" else "active"}" +
+                    (state.error?.let { " · Erreur MediaStore : $it" } ?: " · Erreur MediaStore : aucune"),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
 private fun openFile(context: Context, file: LocalFile): Result<Unit> = runCatching {
+    require(file.uri.scheme == "content") { "URI de fichier invalide" }
     Log.i(FILE_OPEN_TAG, "Opening selected file: name=${file.name}, uri=${file.uri}")
     val intent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(file.uri, file.mimeType ?: "*/*")
@@ -204,11 +247,14 @@ private fun requiredPermissions(category: FileCategory): Array<String> = when {
 }
 
 private fun hasPermissionFor(context: Context, category: FileCategory): Boolean {
+    if (category != FileCategory.IMAGES && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return true
     val permissions = requiredPermissions(category)
     return permissions.isEmpty() || permissions.any {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
 }
+
+private fun hasImagePermission(context: Context) = hasPermissionFor(context, FileCategory.IMAGES)
 
 private const val FILE_OPEN_TAG = "NetKFileOpen"
 
