@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -63,8 +64,8 @@ fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: FileViewModel = vie
     var query by remember { mutableStateOf("") }
     var openError by remember { mutableStateOf<String?>(null) }
     var permissionGranted by remember(state.category) { mutableStateOf(hasPermissionFor(context, state.category)) }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        permissionGranted = granted || hasPermissionFor(context, state.category)
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        permissionGranted = grants.values.any { it } || hasPermissionFor(context, state.category)
         if (permissionGranted) viewModel.scan()
     }
     LaunchedEffect(Unit) { if (permissionGranted) viewModel.scan() }
@@ -86,22 +87,29 @@ fun BaseAndroidApp(modifier: Modifier = Modifier, viewModel: FileViewModel = vie
                 FileTabs(state.category) { category ->
                     query = ""
                     permissionGranted = hasPermissionFor(context, category)
-                    viewModel.selectCategory(category)
-                    requiredPermission(category)?.takeIf { !permissionGranted }?.let(permissionLauncher::launch)
+                    viewModel.selectCategory(category, scanNow = permissionGranted)
+                    requiredPermissions(category).takeIf { !permissionGranted && it.isNotEmpty() }
+                        ?.let(permissionLauncher::launch)
                 }
             }
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
-                !permissionGranted -> PermissionState { requiredPermission(state.category)?.let(permissionLauncher::launch) }
+                !permissionGranted -> PermissionState {
+                    requiredPermissions(state.category).takeIf { it.isNotEmpty() }?.let(permissionLauncher::launch)
+                }
                 state.isLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 visibleFiles.isEmpty() -> EmptyState(if (query.isBlank()) {
                     "Aucun fichier ${state.category.label} trouvé sur cet appareil."
                 } else "Aucun résultat pour « ${query.trim()} ».")
                 else -> FileList(visibleFiles, state.category) { file ->
                     openFile(context, file).onFailure {
-                        openError = "Aucune application compatible ne permet d’ouvrir ${file.name}."
+                        openError = if (it is NoFileViewerException) {
+                            "Aucune application compatible n’est installée pour ouvrir ${file.name}."
+                        } else {
+                            "Impossible d’ouvrir ${file.name} : ${it.localizedMessage ?: "erreur inconnue"}."
+                        }
                     }
                 }
             }
@@ -159,7 +167,7 @@ private fun PermissionState(request: () -> Unit) {
         Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Autorisez l’accès au stockage pour afficher les fichiers de cette catégorie.")
+        Text("L’accès a été refusé. Autorisez l’accès aux fichiers dans les réglages Android pour afficher cette catégorie.")
         Button(request, Modifier.padding(top = 16.dp)) { Text("Autoriser l’accès") }
     }
 }
@@ -172,22 +180,37 @@ private fun EmptyState(message: String) {
 }
 
 private fun openFile(context: Context, file: LocalFile): Result<Unit> = runCatching {
+    Log.i(FILE_OPEN_TAG, "Opening selected file: name=${file.name}, uri=${file.uri}")
     val intent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(file.uri, file.mimeType ?: "*/*")
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
+    if (intent.resolveActivity(context.packageManager) == null) {
+        throw NoFileViewerException()
+    }
     context.startActivity(Intent.createChooser(intent, "Ouvrir avec"))
+}.onFailure {
+    Log.e(FILE_OPEN_TAG, "Failed to open ${file.uri}: ${it.message}", it)
 }
 
-private fun requiredPermission(category: FileCategory): String? = when {
-    Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2 -> Manifest.permission.READ_EXTERNAL_STORAGE
-    category == FileCategory.IMAGES -> Manifest.permission.READ_MEDIA_IMAGES
-    else -> null
+private class NoFileViewerException : Exception("No application handles this file type")
+
+private fun requiredPermissions(category: FileCategory): Array<String> = when {
+    Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2 -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    category == FileCategory.IMAGES && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+        arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+    category == FileCategory.IMAGES -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+    else -> emptyArray()
 }
 
-private fun hasPermissionFor(context: Context, category: FileCategory) = requiredPermission(category)?.let {
-    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-} ?: true
+private fun hasPermissionFor(context: Context, category: FileCategory): Boolean {
+    val permissions = requiredPermissions(category)
+    return permissions.isEmpty() || permissions.any {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }
+}
+
+private const val FILE_OPEN_TAG = "NetKFileOpen"
 
 private fun formatDate(timestamp: Long) =
     DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault()).format(Date(timestamp))

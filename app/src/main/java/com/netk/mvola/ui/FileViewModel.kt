@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.netk.mvola.data.FileCategory
 import com.netk.mvola.data.FileRepository
 import com.netk.mvola.data.LocalFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,24 +25,27 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
     val state = _state.asStateFlow()
     private var scanJob: Job? = null
 
-    fun selectCategory(category: FileCategory) {
+    fun selectCategory(category: FileCategory, scanNow: Boolean = true) {
         if (_state.value.category != category) _state.value = FileBrowserState(category = category)
-        scan()
+        if (scanNow) scan()
     }
 
     fun scan() {
         scanJob?.cancel()
         scanJob = viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null)
-            repository.scan(_state.value.category).fold(
-                onSuccess = { _state.value = _state.value.copy(files = it, isLoading = false) },
-                onFailure = {
-                    _state.value = _state.value.copy(
-                        files = emptyList(), isLoading = false,
-                        error = it.localizedMessage ?: "Impossible de lire les fichiers locaux.",
-                    )
-                },
-            )
+            try {
+                val files = repository.scan(_state.value.category)
+                _state.value = _state.value.copy(files = files, isLoading = false)
+            } catch (cancelled: CancellationException) {
+                // Category changes deliberately cancel the previous scan; never report that as an error.
+                throw cancelled
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(
+                    files = emptyList(), isLoading = false,
+                    error = error.localizedMessage ?: "Impossible de lire les fichiers locaux.",
+                )
+            }
         }
     }
 
