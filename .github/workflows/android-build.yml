@@ -55,11 +55,22 @@ jobs:
           echo "Keystore présent : OK"
           test -n "$ANDROID_KEYSTORE_PASSWORD"
           test -n "$ANDROID_KEY_ALIAS"
-          keytool -list \
-            -keystore "$keystore" \
-            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
-            -alias "$ANDROID_KEY_ALIAS" \
-            >/dev/null 2>&1
+          keystore_list="$(keytool -list \
+            -keystore "$HOME/.config/.android/debug.keystore" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD")"
+          mapfile -t aliases < <(
+            printf '%s\n' "$keystore_list" |
+              awk -F, '/PrivateKeyEntry|trustedCertEntry|SecretKeyEntry/ {print $1}'
+          )
+          if (( ${#aliases[@]} == 0 )); then
+            echo "Aucun alias trouvé dans le keystore" >&2
+            exit 1
+          fi
+          printf 'Alias trouvé : %s\n' "${aliases[@]}"
+          if ! printf '%s\n' "${aliases[@]}" | grep -Fxq -- "$ANDROID_KEY_ALIAS"; then
+            echo "L'alias configuré est absent du keystore" >&2
+            exit 1
+          fi
           echo "Alias utilisé : OK"
 
       - name: Générer le rapport de signature SHA Firebase
