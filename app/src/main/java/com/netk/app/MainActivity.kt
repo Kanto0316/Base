@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
         try {
             val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(ApiException::class.java)
+            Log.d(TAG, "Google Sign-In account received (email=${account.email ?: "unavailable"})")
             val idToken = account.idToken
             Log.d(TAG, "Google Sign-In idToken present=${!idToken.isNullOrBlank()}")
             if (idToken.isNullOrBlank()) {
@@ -137,7 +138,22 @@ class MainActivity : ComponentActivity() {
                         return;
                       }
                       Promise.resolve(window.firebaseLoginWithToken($encodedToken))
-                        .catch(error => console.error('Firebase Auth: échec de connexion', error));
+                        .then(result => {
+                          const user = result && result.user;
+                          if (!user) {
+                            throw new Error('Firebase Auth returned no current user');
+                          }
+                          window.AndroidGoogleSignIn.onFirebaseAuthResult(
+                            user.uid || null,
+                            user.email || null,
+                            null
+                          );
+                        })
+                        .catch(error => {
+                          const message = error instanceof Error ? error.message : String(error);
+                          console.error('Firebase Auth: échec de connexion', error);
+                          window.AndroidGoogleSignIn.onFirebaseAuthResult(null, null, message);
+                        });
                     })();
                 """.trimIndent(),
                 null,
@@ -253,6 +269,25 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun openAccountChooser() {
             webView.post { showGoogleAccountChooser() }
+        }
+
+        @JavascriptInterface
+        fun onFirebaseAuthResult(uid: String?, email: String?, error: String?) {
+            webView.post {
+                if (!isTrustedSite(webView.url)) return@post
+                if (!error.isNullOrBlank()) {
+                    Log.e(TAG, "Firebase Auth failed: $error")
+                    return@post
+                }
+                if (uid.isNullOrBlank()) {
+                    Log.e(TAG, "Firebase Auth completed without a currentUser")
+                    return@post
+                }
+                Log.d(
+                    TAG,
+                    "Firebase Auth succeeded; currentUser uid=$uid email=${email ?: "unavailable"}",
+                )
+            }
         }
     }
 
