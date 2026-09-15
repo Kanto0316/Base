@@ -26,6 +26,11 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Générer le rapport de signature SHA Firebase
+        run: |
+          chmod +x gradlew
+          ./gradlew signingReport
+
       - name: Compiler l'APK debug
         run: gradle assembleDebug
 
