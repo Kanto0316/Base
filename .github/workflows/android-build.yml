@@ -26,28 +26,80 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Créer debug keystore Android
+      - name: Restaurer le debug keystore Android
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
         run: |
+          set -euo pipefail
+          test -n "$ANDROID_DEBUG_KEYSTORE_BASE64"
           mkdir -p ~/.config/.android
+          keystore_tmp="$(mktemp)"
+          trap 'rm -f "$keystore_tmp"' EXIT
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$keystore_tmp"
+          test -s "$keystore_tmp"
+          chmod 600 "$keystore_tmp"
+          mv "$keystore_tmp" ~/.config/.android/debug.keystore
+          echo "Keystore présent : OK"
 
-          keytool -genkeypair \
-            -v \
-            -keystore ~/.config/.android/debug.keystore \
-            -storepass android \
-            -alias AndroidDebugKey \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
+      - name: Vérifier le keystore et son alias
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          keystore="$HOME/.config/.android/debug.keystore"
+          if [[ ! -s "$keystore" ]]; then
+            echo "Keystore présent : FAIL"
+            exit 1
+          fi
+          echo "Keystore présent : OK"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          keytool -list \
+            -keystore "$keystore" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS" \
+            >/dev/null 2>&1
+          echo "Alias utilisé : OK"
 
       - name: Générer le rapport de signature SHA Firebase
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
           chmod +x gradlew
-          ./gradlew signingReport
+          signing_report="$(mktemp)"
+          trap 'rm -f "$signing_report"' EXIT
+          ./gradlew signingReport \
+            "-Pandroid.injected.signing.store.file=$HOME/.config/.android/debug.keystore" \
+            "-Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD" \
+            "-Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS" \
+            "-Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD" \
+            > "$signing_report"
+          grep -Eq '^SHA1: [0-9A-F]{2}(:[0-9A-F]{2}){19}$' "$signing_report"
+          grep -Eq '^SHA-256: [0-9A-F]{2}(:[0-9A-F]{2}){31}$' "$signing_report"
+          echo "Génération SHA : OK"
 
       - name: Compiler l'APK debug
-        run: gradle assembleDebug
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          ./gradlew assembleDebug \
+            "-Pandroid.injected.signing.store.file=$HOME/.config/.android/debug.keystore" \
+            "-Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD" \
+            "-Pandroid.injected.signing.key.alias=$ANDROID_KEY_ALIAS" \
+            "-Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD"
 
       - name: Publier l'APK
         uses: actions/upload-artifact@v4
