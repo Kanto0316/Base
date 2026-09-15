@@ -322,7 +322,7 @@ class MainActivity : ComponentActivity() {
         pendingFirebaseDiagnostic = diagnostic
         Log.d(TAG, "[AUTH_BRIDGE] status=${diagnostic.status}")
         Log.d(TAG, "[AUTH_BRIDGE] uid=${diagnostic.uid.ifBlank { "unavailable" }}")
-        Log.d(TAG, "[AUTH_BRIDGE] email=${diagnostic.email.ifBlank { "unavailable" }}")
+        Log.d(TAG, "[AUTH_BRIDGE] email_present=${diagnostic.email.isNotBlank()}")
         Log.d(TAG, "[AUTH_BRIDGE] event=${diagnostic.event}")
         deliverPendingFirebaseDiagnostic()
     }
@@ -340,11 +340,34 @@ class MainActivity : ComponentActivity() {
         val diagnostic = pendingFirebaseDiagnostic ?: return
         if (!isWebPageLoaded || !isTrustedSite(webView.url)) return
 
+        val status = JSONObject.quote(diagnostic.status)
+        val message = JSONObject.quote(
+            listOf(diagnostic.event, diagnostic.error)
+                .filter(String::isNotBlank)
+                .joinToString(": "),
+        )
+        Log.d(TAG, "[BRIDGE_CHECK] diagnostic_send_start")
         Log.d(TAG, "[BRIDGE_CHECK] evaluate_javascript_called")
         webView.evaluateJavascript(
-            "updateFirebaseDiagnostic(${diagnostic.toJson()})",
-        ) {
-            if (pendingFirebaseDiagnostic === diagnostic) pendingFirebaseDiagnostic = null
+            """
+                (() => {
+                  try {
+                    if (typeof window.updateAuthDebug !== 'function') return false;
+                    window.updateAuthDebug($status, $message);
+                    return true;
+                  } catch (error) {
+                    return false;
+                  }
+                })();
+            """.trimIndent(),
+        ) { result ->
+            if (result == "true") {
+                Log.d(TAG, "[BRIDGE_CHECK] diagnostic_send_success")
+                if (pendingFirebaseDiagnostic === diagnostic) pendingFirebaseDiagnostic = null
+            } else {
+                Log.e(TAG, "[BRIDGE_CHECK] diagnostic_send_failed")
+                Log.e(TAG, "[BRIDGE_CHECK] javascript_callback_failed")
+            }
         }
     }
 
