@@ -3,5 +3,5 @@
     <string name="site_unavailable">Le site est inaccessible. Vérifiez votre connexion Internet, puis réessayez.</string>
     <string name="retry">Réessayer</string>
     <!-- OAuth 2.0 Web client ID authorized for the Firebase project's Android app. -->
-    <string name="default_web_client_id" translatable="false">YOUR_WEB_CLIENT_ID.apps.googleusercontent.com</string>
+    <string name="default_web_client_id" translatable="false">560283994192-ede7aa7a3714c439542955.apps.googleusercontent.com</string>
 </resources>
