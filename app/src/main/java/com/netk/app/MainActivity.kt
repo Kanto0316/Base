@@ -1,15 +1,14 @@
 package com.netk.app
 
 import android.annotation.SuppressLint
-import android.accounts.AccountManager
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -26,39 +25,39 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import com.google.android.gms.common.AccountPicker
-import org.json.JSONObject
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import org.json.JSONStringer
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var errorView: View
     private var accountSelectionInProgress = false
 
-    private val googleAccountPicker = registerForActivityResult(
+    private val googleSignInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         accountSelectionInProgress = false
-        when (result.resultCode) {
-            RESULT_OK -> handleSelectedGoogleAccount(result.data)
-            RESULT_CANCELED -> returnGoogleAccount(null, GOOGLE_ACCOUNT_CANCELLED)
-            else -> returnGoogleAccount(null, GOOGLE_ACCOUNT_ERROR)
+        Log.d(TAG, "Google Sign-In result received (resultCode=${result.resultCode})")
+
+        if (result.resultCode != RESULT_OK) {
+            Log.d(TAG, "Google Sign-In cancelled")
+            return@registerForActivityResult
         }
-    }
 
-    private fun handleSelectedGoogleAccount(data: Intent?) {
-        val email = data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-        val accountType = data?.getStringExtra(AccountManager.KEY_ACCOUNT_TYPE)
-
-        if (email.isNullOrBlank()) {
-            returnGoogleAccount(null, GOOGLE_ACCOUNT_ERROR)
-        } else {
-            returnGoogleAccount(
-                JSONObject().apply {
-                    put("email", email)
-                    put("type", accountType ?: GOOGLE_ACCOUNT_TYPE)
-                },
-                null,
-            )
+        try {
+            val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                .getResult(ApiException::class.java)
+            val idToken = account.idToken
+            Log.d(TAG, "Google Sign-In idToken present=${!idToken.isNullOrBlank()}")
+            if (idToken.isNullOrBlank()) {
+                Log.e(TAG, "Google Sign-In returned no ID token")
+            } else {
+                sendGoogleIdTokenToWebView(idToken)
+            }
+        } catch (error: ApiException) {
+            Log.e(TAG, "Google Sign-In failed (statusCode=${error.statusCode})", error)
         }
     }
 
@@ -110,29 +109,37 @@ class MainActivity : ComponentActivity() {
     private fun showGoogleAccountChooser() {
         if (accountSelectionInProgress || !isTrustedSite(webView.url)) return
         accountSelectionInProgress = true
-        val pickerIntent = AccountPicker.newChooseAccountIntent(
-            AccountPicker.AccountChooserOptions.Builder()
-                .setAllowableAccountsTypes(listOf(GOOGLE_ACCOUNT_TYPE))
-                .setAlwaysShowAccountPicker(true)
-                .build(),
-        )
+        Log.d(TAG, "Launching Google Sign-In")
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        val signInIntent = GoogleSignIn.getClient(this, options).signInIntent
         try {
-            googleAccountPicker.launch(pickerIntent)
-        } catch (_: RuntimeException) {
+            googleSignInLauncher.launch(signInIntent)
+        } catch (error: RuntimeException) {
             accountSelectionInProgress = false
-            returnGoogleAccount(null, GOOGLE_ACCOUNT_ERROR)
+            Log.e(TAG, "Unable to launch Google Sign-In", error)
         }
     }
 
-    private fun returnGoogleAccount(account: JSONObject?, error: String?) {
-        if (!isTrustedSite(webView.url)) return
-        val result = JSONObject().apply {
-            put("account", account ?: JSONObject.NULL)
-            put("error", error ?: JSONObject.NULL)
-        }
+    private fun sendGoogleIdTokenToWebView(idToken: String) {
         webView.post {
+            if (!isTrustedSite(webView.url)) return@post
+            // JSONStringer performs the required JavaScript string escaping; never interpolate raw tokens.
+            val encodedToken = JSONStringer().value(idToken).toString()
             webView.evaluateJavascript(
-                "window.__receiveAndroidGoogleAccount(${result});",
+                """
+                    (() => {
+                      console.log('Firebase Auth: token Android reçu');
+                      if (typeof window.firebaseLoginWithToken !== 'function') {
+                        console.error('Firebase Auth: firebaseLoginWithToken indisponible');
+                        return;
+                      }
+                      Promise.resolve(window.firebaseLoginWithToken($encodedToken))
+                        .catch(error => console.error('Firebase Auth: échec de connexion', error));
+                    })();
+                """.trimIndent(),
                 null,
             )
         }
@@ -220,14 +227,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private inner class SiteWebViewClient : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            if (request.url.host == GOOGLE_ACCOUNTS_HOST) {
-                view.post { showGoogleAccountChooser() }
-                return true
-            }
-            return false
-        }
-
         override fun onPageFinished(view: WebView, url: String) {
             super.onPageFinished(view, url)
             if (isTrustedSite(url)) view.evaluateJavascript(GOOGLE_BUTTON_BRIDGE_SCRIPT, null)
@@ -259,52 +258,19 @@ class MainActivity : ComponentActivity() {
 
     private fun isTrustedSite(url: String?): Boolean {
         val uri = url?.let(Uri::parse) ?: return false
-        return uri.host == SITE_HOST && (uri.scheme == "http" || uri.scheme == "https")
+        return uri.host == SITE_HOST && uri.scheme == "https"
     }
 
     private companion object {
-        const val SITE_URL = "http://kanto0316.github.io/Album"
+        const val SITE_URL = "https://kanto0316.github.io/Album"
         const val SITE_HOST = "kanto0316.github.io"
-        const val GOOGLE_ACCOUNTS_HOST = "accounts.google.com"
         const val GOOGLE_BRIDGE_NAME = "AndroidGoogleSignIn"
-        const val GOOGLE_ACCOUNT_TYPE = "com.google"
-        const val GOOGLE_ACCOUNT_CANCELLED = "cancelled"
-        const val GOOGLE_ACCOUNT_ERROR = "account_unavailable"
+        const val TAG = "FirebaseAuth"
 
         val GOOGLE_BUTTON_BRIDGE_SCRIPT = """
             (() => {
               if (window.__androidGoogleAccountBridgeInstalled) return;
               window.__androidGoogleAccountBridgeInstalled = true;
-
-              window.__receiveAndroidGoogleAccount = result => {
-                const googleButton = Array.from(
-                  document.querySelectorAll('button, a, [role="button"]')
-                ).find(element => [
-                  element.id,
-                  element.className,
-                  element.getAttribute('href'),
-                  element.getAttribute('aria-label'),
-                  element.getAttribute('data-provider'),
-                  element.textContent
-                ].filter(Boolean).join(' ').toLowerCase().includes('google'));
-
-                if (result.account && googleButton) {
-                  let accountLabel = document.getElementById('android-google-account');
-                  if (!accountLabel) {
-                    accountLabel = document.createElement('div');
-                    accountLabel.id = 'android-google-account';
-                    accountLabel.setAttribute('role', 'status');
-                    googleButton.insertAdjacentElement('afterend', accountLabel);
-                  }
-                  accountLabel.textContent = result.account.email;
-                }
-                window.dispatchEvent(new CustomEvent('android-google-account-result', {
-                  detail: result
-                }));
-                if (typeof window.onAndroidGoogleAccountResult === 'function') {
-                  window.onAndroidGoogleAccountResult(result);
-                }
-              };
 
               document.addEventListener('click', event => {
                 const target = event.target instanceof Element
