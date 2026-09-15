@@ -28,12 +28,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import org.json.JSONStringer
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var errorView: View
     private var accountSelectionInProgress = false
+    private var isWebPageLoaded = false
+    private var pendingFirebaseDiagnostic: FirebaseDiagnostic? = null
 
     private val googleSignInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -43,6 +45,12 @@ class MainActivity : ComponentActivity() {
 
         if (result.resultCode != RESULT_OK) {
             Log.d(TAG, "Google Sign-In cancelled")
+            publishFirebaseDiagnostic(
+                FirebaseDiagnostic.disconnected(
+                    event = "GOOGLE_SIGN_IN_CANCELLED",
+                    error = "Google Sign-In cancelled",
+                ),
+            )
             return@registerForActivityResult
         }
 
@@ -54,11 +62,23 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Google Sign-In idToken present=${!idToken.isNullOrBlank()}")
             if (idToken.isNullOrBlank()) {
                 Log.e(TAG, "Google Sign-In returned no ID token")
+                publishFirebaseDiagnostic(
+                    FirebaseDiagnostic.disconnected(
+                        event = "GOOGLE_SIGN_IN_ERROR",
+                        error = "Google Sign-In returned no ID token",
+                    ),
+                )
             } else {
                 sendGoogleIdTokenToWebView(idToken)
             }
         } catch (error: ApiException) {
             Log.e(TAG, "Google Sign-In failed (statusCode=${error.statusCode})", error)
+            publishFirebaseDiagnostic(
+                FirebaseDiagnostic.disconnected(
+                    event = "GOOGLE_SIGN_IN_ERROR",
+                    error = "Google Sign-In failed (statusCode=${error.statusCode})",
+                ),
+            )
         }
     }
 
@@ -121,14 +141,20 @@ class MainActivity : ComponentActivity() {
         } catch (error: RuntimeException) {
             accountSelectionInProgress = false
             Log.e(TAG, "Unable to launch Google Sign-In", error)
+            publishFirebaseDiagnostic(
+                FirebaseDiagnostic.disconnected(
+                    event = "GOOGLE_SIGN_IN_ERROR",
+                    error = error.message ?: "Unable to launch Google Sign-In",
+                ),
+            )
         }
     }
 
     private fun sendGoogleIdTokenToWebView(idToken: String) {
         webView.post {
             if (!isTrustedSite(webView.url)) return@post
-            // JSONStringer performs the required JavaScript string escaping; never interpolate raw tokens.
-            val encodedToken = JSONStringer().value(idToken).toString()
+            // JSONObject.quote performs the required JavaScript string escaping; never interpolate raw tokens.
+            val encodedToken = JSONObject.quote(idToken)
             webView.evaluateJavascript(
                 """
                     (() => {
@@ -146,13 +172,14 @@ class MainActivity : ComponentActivity() {
                           window.AndroidGoogleSignIn.onFirebaseAuthResult(
                             user.uid || null,
                             user.email || null,
+                            user.displayName || null,
                             null
                           );
                         })
                         .catch(error => {
                           const message = error instanceof Error ? error.message : String(error);
                           console.error('Firebase Auth: échec de connexion', error);
-                          window.AndroidGoogleSignIn.onFirebaseAuthResult(null, null, message);
+                          window.AndroidGoogleSignIn.onFirebaseAuthResult(null, null, null, message);
                         });
                     })();
                 """.trimIndent(),
@@ -206,7 +233,28 @@ class MainActivity : ComponentActivity() {
             return
         }
         errorView.visibility = View.GONE
+        isWebPageLoaded = false
         webView.loadUrl(SITE_URL)
+    }
+
+    private fun publishFirebaseDiagnostic(diagnostic: FirebaseDiagnostic) {
+        pendingFirebaseDiagnostic = diagnostic
+        Log.d(TAG, "[AUTH_BRIDGE] status=${diagnostic.status}")
+        Log.d(TAG, "[AUTH_BRIDGE] uid=${diagnostic.uid.ifBlank { "unavailable" }}")
+        Log.d(TAG, "[AUTH_BRIDGE] email=${diagnostic.email.ifBlank { "unavailable" }}")
+        Log.d(TAG, "[AUTH_BRIDGE] event=${diagnostic.event}")
+        deliverPendingFirebaseDiagnostic()
+    }
+
+    private fun deliverPendingFirebaseDiagnostic() {
+        val diagnostic = pendingFirebaseDiagnostic ?: return
+        if (!isWebPageLoaded || !isTrustedSite(webView.url)) return
+
+        webView.evaluateJavascript(
+            "updateFirebaseDiagnostic(${diagnostic.toJson()})",
+        ) {
+            if (pendingFirebaseDiagnostic === diagnostic) pendingFirebaseDiagnostic = null
+        }
     }
 
     private fun hasInternetConnection(): Boolean {
@@ -243,9 +291,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private inner class SiteWebViewClient : WebViewClient() {
+        override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+            isWebPageLoaded = false
+            super.onPageStarted(view, url, favicon)
+        }
+
         override fun onPageFinished(view: WebView, url: String) {
             super.onPageFinished(view, url)
-            if (isTrustedSite(url)) view.evaluateJavascript(GOOGLE_BUTTON_BRIDGE_SCRIPT, null)
+            isWebPageLoaded = isTrustedSite(url)
+            if (isWebPageLoaded) {
+                view.evaluateJavascript(GOOGLE_BUTTON_BRIDGE_SCRIPT, null)
+                deliverPendingFirebaseDiagnostic()
+            }
         }
 
         override fun onReceivedError(
@@ -272,22 +329,75 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun onFirebaseAuthResult(uid: String?, email: String?, error: String?) {
+        fun onFirebaseAuthResult(
+            uid: String?,
+            email: String?,
+            displayName: String?,
+            error: String?,
+        ) {
             webView.post {
                 if (!isTrustedSite(webView.url)) return@post
                 if (!error.isNullOrBlank()) {
                     Log.e(TAG, "Firebase Auth failed: $error")
+                    publishFirebaseDiagnostic(
+                        FirebaseDiagnostic.disconnected(
+                            event = "FIREBASE_ERROR",
+                            error = error,
+                        ),
+                    )
                     return@post
                 }
                 if (uid.isNullOrBlank()) {
-                    Log.e(TAG, "Firebase Auth completed without a currentUser")
+                    Log.d(TAG, "Firebase Auth has no currentUser")
+                    publishFirebaseDiagnostic(
+                        FirebaseDiagnostic.disconnected(event = "FIREBASE_SIGNED_OUT"),
+                    )
                     return@post
                 }
                 Log.d(
                     TAG,
                     "Firebase Auth succeeded; currentUser uid=$uid email=${email ?: "unavailable"}",
                 )
+                publishFirebaseDiagnostic(
+                    FirebaseDiagnostic(
+                        status = "CONNECTÉ",
+                        uid = uid,
+                        email = email.orEmpty(),
+                        displayName = displayName.orEmpty(),
+                        event = "FIREBASE_SUCCESS",
+                        error = "",
+                    ),
+                )
             }
+        }
+    }
+
+    private data class FirebaseDiagnostic(
+        val status: String,
+        val uid: String,
+        val email: String,
+        val displayName: String,
+        val event: String,
+        val error: String,
+    ) {
+        fun toJson(): String = JSONObject()
+            .put("status", status)
+            .put("uid", uid)
+            .put("email", email)
+            .put("displayName", displayName)
+            .put("event", event)
+            .put("error", error)
+            .toString()
+
+        companion object {
+            fun disconnected(event: String, error: String = "") = FirebaseDiagnostic(
+                status = "NON CONNECTÉ",
+                uid = "",
+                email = "",
+                displayName = "",
+                event = event,
+                error = error,
+            )
         }
     }
 
