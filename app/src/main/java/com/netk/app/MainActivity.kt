@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         accountSelectionInProgress = false
+        Log.d(TAG, "[BRIDGE_CHECK] activity_result_received")
         Log.d(TAG, "[GOOGLE_CALLBACK] activity_result_received")
         when (result.resultCode) {
             RESULT_OK -> Log.d(TAG, "[GOOGLE_CALLBACK] resultCode=RESULT_OK")
@@ -107,12 +108,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         webView = WebView(this).apply {
+            Log.d(TAG, "[BRIDGE_CHECK] webview_created")
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.loadsImagesAutomatically = true
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
             addJavascriptInterface(AndroidAuthBridge(), GOOGLE_BRIDGE_NAME)
+            Log.d(TAG, "[BRIDGE_CHECK] javascript_interface_added")
             webViewClient = SiteWebViewClient()
         }
 
@@ -157,6 +160,7 @@ class MainActivity : ComponentActivity() {
             .build()
         val signInIntent = GoogleSignIn.getClient(this, options).signInIntent
         try {
+            Log.d(TAG, "[BRIDGE_CHECK] google_launcher_called")
             Log.d(TAG, "[GOOGLE_CALLBACK] launcher_launch_called")
             googleSignInLauncher.launch(signInIntent)
         } catch (error: RuntimeException) {
@@ -218,6 +222,7 @@ class MainActivity : ComponentActivity() {
 
     private fun checkWebBridgeReady(attempt: Int = 0) {
         if (!isWebPageLoaded || !isTrustedSite(webView.url)) return
+        Log.d(TAG, "[BRIDGE_CHECK] evaluate_javascript_called")
         webView.evaluateJavascript(
             "typeof window.firebaseLoginWithToken === 'function'",
         ) { result ->
@@ -242,6 +247,7 @@ class MainActivity : ComponentActivity() {
             // JSONObject.quote performs the required JavaScript string escaping; never interpolate raw tokens.
             val encodedToken = JSONObject.quote(idToken)
             pendingGoogleIdToken = null
+            Log.d(TAG, "[BRIDGE_CHECK] evaluate_javascript_called")
             webView.evaluateJavascript(
                 """
                     (() => {
@@ -334,6 +340,7 @@ class MainActivity : ComponentActivity() {
         val diagnostic = pendingFirebaseDiagnostic ?: return
         if (!isWebPageLoaded || !isTrustedSite(webView.url)) return
 
+        Log.d(TAG, "[BRIDGE_CHECK] evaluate_javascript_called")
         webView.evaluateJavascript(
             "updateFirebaseDiagnostic(${diagnostic.toJson()})",
         ) {
@@ -385,6 +392,7 @@ class MainActivity : ComponentActivity() {
             super.onPageFinished(view, url)
             isWebPageLoaded = isTrustedSite(url)
             if (isWebPageLoaded) {
+                Log.d(TAG, "[BRIDGE_CHECK] evaluate_javascript_called")
                 view.evaluateJavascript(GOOGLE_BUTTON_BRIDGE_SCRIPT, null)
                 checkWebBridgeReady()
                 deliverPendingFirebaseDiagnostic()
