@@ -45,22 +45,34 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         accountSelectionInProgress = false
-        Log.d(TAG, "Google Sign-In result received (resultCode=${result.resultCode})")
+        Log.d(TAG, "[GOOGLE_CALLBACK] activity_result_received")
+        when (result.resultCode) {
+            RESULT_OK -> Log.d(TAG, "[GOOGLE_CALLBACK] resultCode=RESULT_OK")
+            RESULT_CANCELED -> Log.d(TAG, "[GOOGLE_CALLBACK] resultCode=RESULT_CANCELED")
+            else -> Log.d(TAG, "[GOOGLE_CALLBACK] resultCode=OTHER(${result.resultCode})")
+        }
+        Log.d(TAG, "[GOOGLE_CALLBACK] intent_received=${result.data != null}")
 
         if (result.resultCode != RESULT_OK) {
-            Log.d(TAG, "Google Sign-In cancelled")
+            val resultLabel = if (result.resultCode == RESULT_CANCELED) {
+                "RESULT_CANCELED"
+            } else {
+                "OTHER(${result.resultCode})"
+            }
             publishFirebaseDiagnostic(
                 FirebaseDiagnostic.disconnected(
                     event = "GOOGLE_SIGN_IN_CANCELLED",
-                    error = "Google Sign-In cancelled",
+                    error = "Google Sign-In result: $resultLabel",
                 ),
             )
             return@registerForActivityResult
         }
 
         try {
+            Log.d(TAG, "[GOOGLE_CALLBACK] extracting_account")
             val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(ApiException::class.java)
+            updateAuthDebug("GOOGLE_ACCOUNT_RECEIVED", "Compte Google reçu")
             Log.d(TAG, "[GOOGLE_RESULT] account_received")
             val idToken = account.idToken
             Log.d(TAG, "[GOOGLE_RESULT] idToken_present=${!idToken.isNullOrBlank()}")
@@ -76,11 +88,15 @@ class MainActivity : ComponentActivity() {
                 signInToFirebase(idToken)
             }
         } catch (error: ApiException) {
-            Log.e(TAG, "Google Sign-In failed (statusCode=${error.statusCode})", error)
+            Log.e(
+                TAG,
+                "[GOOGLE_CALLBACK] ApiException code=${error.statusCode} message=${error.message.orEmpty()}",
+                error,
+            )
             publishFirebaseDiagnostic(
                 FirebaseDiagnostic.disconnected(
                     event = "GOOGLE_SIGN_IN_ERROR",
-                    error = "Google Sign-In failed (statusCode=${error.statusCode})",
+                    error = "ApiException code=${error.statusCode}: ${error.message.orEmpty()}",
                 ),
             )
         }
@@ -141,6 +157,7 @@ class MainActivity : ComponentActivity() {
             .build()
         val signInIntent = GoogleSignIn.getClient(this, options).signInIntent
         try {
+            Log.d(TAG, "[GOOGLE_CALLBACK] launcher_launch_called")
             googleSignInLauncher.launch(signInIntent)
         } catch (error: RuntimeException) {
             accountSelectionInProgress = false
@@ -302,6 +319,15 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "[AUTH_BRIDGE] email=${diagnostic.email.ifBlank { "unavailable" }}")
         Log.d(TAG, "[AUTH_BRIDGE] event=${diagnostic.event}")
         deliverPendingFirebaseDiagnostic()
+    }
+
+    private fun updateAuthDebug(event: String, message: String) {
+        publishFirebaseDiagnostic(
+            FirebaseDiagnostic.disconnected(
+                event = event,
+                error = message,
+            ),
+        )
     }
 
     private fun deliverPendingFirebaseDiagnostic() {
