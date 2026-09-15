@@ -1,12 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-}
-
-// Keep local/CI builds usable before the project-specific Firebase file is provisioned.
-// Once present, the plugin generates the Firebase Android resources automatically.
-if (file("google-services.json").isFile) {
-    apply(plugin = "com.google.gms.google-services")
+    alias(libs.plugins.google.services)
 }
 
 dependencies {

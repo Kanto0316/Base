@@ -12,8 +12,9 @@ Application Android légère qui affiche le site distant de PDF by Kanto dans un
 
 ## Pont Google natif
 
-Renseigner `default_web_client_id` dans `app/src/main/res/values/strings.xml` avec l'identifiant du
-client OAuth **Web** associé au projet Firebase (et non l'identifiant du client Android). Le clic sur
+`default_web_client_id` est généré par le plugin Google Services depuis le client OAuth **Web**
+associé au projet Firebase dans `app/google-services.json` (et non depuis un identifiant saisi
+manuellement). Le clic sur
 le bouton Google existant est intercepté sans modifier sa présentation. Android ouvre Google
 Sign-In, demande un ID token, puis appelle `window.firebaseLoginWithToken(idToken)` dans la page.
 
