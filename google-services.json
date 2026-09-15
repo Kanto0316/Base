@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "560283994192",
+    "project_id": "base-737bf",
+    "storage_bucket": "base-737bf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:560283994192:android:54f2d94898bbc196542955",
+        "android_client_info": {
+          "package_name": "com.netk.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "560283994192-59obp41008v8bvif4dvspufi5dkim8t2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.netk.app",
+            "certificate_hash": "5268267db41ae0d92be1f94a66f658bf7981d07a"
+          }
+        },
+        {
+          "client_id": "560283994192-7is04i1csfomdtcvv7t89omrbldhd2fp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQMywZSD5-yTGSa279o2isa030ntHJUec"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "560283994192-7is04i1csfomdtcvv7t89omrbldhd2fp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
