@@ -28,6 +28,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -35,6 +37,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var errorView: View
     private var accountSelectionInProgress = false
     private var isWebPageLoaded = false
+    private var isFirebaseWebBridgeReady = false
+    private var pendingGoogleIdToken: String? = null
     private var pendingFirebaseDiagnostic: FirebaseDiagnostic? = null
 
     private val googleSignInLauncher = registerForActivityResult(
@@ -57,9 +61,9 @@ class MainActivity : ComponentActivity() {
         try {
             val account = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(ApiException::class.java)
-            Log.d(TAG, "Google Sign-In account received (email=${account.email ?: "unavailable"})")
+            Log.d(TAG, "[GOOGLE_RESULT] account_received")
             val idToken = account.idToken
-            Log.d(TAG, "Google Sign-In idToken present=${!idToken.isNullOrBlank()}")
+            Log.d(TAG, "[GOOGLE_RESULT] idToken_present=${!idToken.isNullOrBlank()}")
             if (idToken.isNullOrBlank()) {
                 Log.e(TAG, "Google Sign-In returned no ID token")
                 publishFirebaseDiagnostic(
@@ -69,7 +73,7 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             } else {
-                sendGoogleIdTokenToWebView(idToken)
+                signInToFirebase(idToken)
             }
         } catch (error: ApiException) {
             Log.e(TAG, "Google Sign-In failed (statusCode=${error.statusCode})", error)
@@ -92,7 +96,7 @@ class MainActivity : ComponentActivity() {
             settings.loadsImagesAutomatically = true
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
-            addJavascriptInterface(GoogleAccountBridge(), GOOGLE_BRIDGE_NAME)
+            addJavascriptInterface(AndroidAuthBridge(), GOOGLE_BRIDGE_NAME)
             webViewClient = SiteWebViewClient()
         }
 
@@ -130,7 +134,7 @@ class MainActivity : ComponentActivity() {
     private fun showGoogleAccountChooser() {
         if (accountSelectionInProgress || !isTrustedSite(webView.url)) return
         accountSelectionInProgress = true
-        Log.d(TAG, "Launching Google Sign-In")
+        Log.d(TAG, "[ANDROID_AUTH] start_google_signin")
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(getString(R.string.default_web_client_id))
             .requestEmail()
@@ -150,40 +154,93 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun sendGoogleIdTokenToWebView(idToken: String) {
+    private fun signInToFirebase(idToken: String) {
+        val auth = try {
+            FirebaseAuth.getInstance()
+        } catch (error: IllegalStateException) {
+            Log.e(TAG, "[FIREBASE_RESULT] Firebase is not configured", error)
+            publishFirebaseDiagnostic(
+                FirebaseDiagnostic.disconnected("FIREBASE_CONFIGURATION_ERROR", error.message.orEmpty()),
+            )
+            return
+        }
+        auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
+            .addOnCompleteListener(this) { task ->
+                val user = if (task.isSuccessful) auth.currentUser else null
+                if (user == null) {
+                    Log.e(TAG, "[FIREBASE_RESULT] sign_in_error", task.exception)
+                    publishFirebaseDiagnostic(
+                        FirebaseDiagnostic.disconnected(
+                            "FIREBASE_ERROR",
+                            task.exception?.message ?: "Firebase returned no currentUser",
+                        ),
+                    )
+                    return@addOnCompleteListener
+                }
+
+                Log.d(TAG, "[FIREBASE_RESULT] uid_received")
+                Log.d(TAG, "[FIREBASE_RESULT] email_received")
+                publishFirebaseDiagnostic(
+                    FirebaseDiagnostic(
+                        status = "CONNECTÉ",
+                        uid = user.uid,
+                        email = user.email.orEmpty(),
+                        displayName = user.displayName.orEmpty(),
+                        event = "FIREBASE_SUCCESS",
+                        error = "",
+                    ),
+                )
+                queueGoogleIdTokenForWeb(idToken)
+            }
+    }
+
+    private fun queueGoogleIdTokenForWeb(idToken: String) {
+        pendingGoogleIdToken = idToken
+        if (isFirebaseWebBridgeReady) deliverPendingGoogleIdToken() else checkWebBridgeReady()
+    }
+
+    private fun checkWebBridgeReady(attempt: Int = 0) {
+        if (!isWebPageLoaded || !isTrustedSite(webView.url)) return
+        webView.evaluateJavascript(
+            "typeof window.firebaseLoginWithToken === 'function'",
+        ) { result ->
+            isFirebaseWebBridgeReady = result == "true"
+            if (isFirebaseWebBridgeReady) {
+                Log.d(TAG, "[WEBVIEW_BRIDGE] bridge_ready")
+                deliverPendingGoogleIdToken()
+            } else if (attempt < WEB_BRIDGE_MAX_ATTEMPTS) {
+                webView.postDelayed({ checkWebBridgeReady(attempt + 1) }, WEB_BRIDGE_RETRY_MS)
+            } else {
+                Log.d(TAG, "[WEBVIEW_BRIDGE] bridge_not_ready")
+            }
+        }
+    }
+
+    private fun deliverPendingGoogleIdToken() {
+        val idToken = pendingGoogleIdToken ?: return
         webView.post {
-            if (!isTrustedSite(webView.url)) return@post
+            if (!isWebPageLoaded || !isFirebaseWebBridgeReady || !isTrustedSite(webView.url)) {
+                return@post
+            }
             // JSONObject.quote performs the required JavaScript string escaping; never interpolate raw tokens.
             val encodedToken = JSONObject.quote(idToken)
+            pendingGoogleIdToken = null
             webView.evaluateJavascript(
                 """
                     (() => {
-                      console.log('Firebase Auth: token Android reçu');
                       if (typeof window.firebaseLoginWithToken !== 'function') {
-                        console.error('Firebase Auth: firebaseLoginWithToken indisponible');
+                        window.AndroidAuth.onJavascriptCallback(false, 'firebaseLoginWithToken unavailable');
                         return;
                       }
                       Promise.resolve(window.firebaseLoginWithToken($encodedToken))
-                        .then(result => {
-                          const user = result && result.user;
-                          if (!user) {
-                            throw new Error('Firebase Auth returned no current user');
-                          }
-                          window.AndroidGoogleSignIn.onFirebaseAuthResult(
-                            user.uid || null,
-                            user.email || null,
-                            user.displayName || null,
-                            null
-                          );
-                        })
+                        .then(() => window.AndroidAuth.onJavascriptCallback(true, null))
                         .catch(error => {
                           const message = error instanceof Error ? error.message : String(error);
-                          console.error('Firebase Auth: échec de connexion', error);
-                          window.AndroidGoogleSignIn.onFirebaseAuthResult(null, null, null, message);
+                          window.AndroidAuth.onJavascriptCallback(false, message);
                         });
                     })();
                 """.trimIndent(),
-                null,
+                { Log.d(TAG, "[WEBVIEW_BRIDGE] token_sent") },
             )
         }
     }
@@ -234,6 +291,7 @@ class MainActivity : ComponentActivity() {
         }
         errorView.visibility = View.GONE
         isWebPageLoaded = false
+        isFirebaseWebBridgeReady = false
         webView.loadUrl(SITE_URL)
     }
 
@@ -293,6 +351,7 @@ class MainActivity : ComponentActivity() {
     private inner class SiteWebViewClient : WebViewClient() {
         override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
             isWebPageLoaded = false
+            isFirebaseWebBridgeReady = false
             super.onPageStarted(view, url, favicon)
         }
 
@@ -301,6 +360,7 @@ class MainActivity : ComponentActivity() {
             isWebPageLoaded = isTrustedSite(url)
             if (isWebPageLoaded) {
                 view.evaluateJavascript(GOOGLE_BUTTON_BRIDGE_SCRIPT, null)
+                checkWebBridgeReady()
                 deliverPendingFirebaseDiagnostic()
             }
         }
@@ -322,52 +382,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private inner class GoogleAccountBridge {
+    private inner class AndroidAuthBridge {
         @JavascriptInterface
-        fun openAccountChooser() {
+        fun startGoogleSignIn() {
             webView.post { showGoogleAccountChooser() }
         }
 
         @JavascriptInterface
-        fun onFirebaseAuthResult(
-            uid: String?,
-            email: String?,
-            displayName: String?,
-            error: String?,
-        ) {
+        fun onJavascriptCallback(success: Boolean, error: String?) {
             webView.post {
                 if (!isTrustedSite(webView.url)) return@post
-                if (!error.isNullOrBlank()) {
-                    Log.e(TAG, "Firebase Auth failed: $error")
-                    publishFirebaseDiagnostic(
-                        FirebaseDiagnostic.disconnected(
-                            event = "FIREBASE_ERROR",
-                            error = error,
-                        ),
-                    )
-                    return@post
-                }
-                if (uid.isNullOrBlank()) {
-                    Log.d(TAG, "Firebase Auth has no currentUser")
-                    publishFirebaseDiagnostic(
-                        FirebaseDiagnostic.disconnected(event = "FIREBASE_SIGNED_OUT"),
-                    )
-                    return@post
-                }
-                Log.d(
-                    TAG,
-                    "Firebase Auth succeeded; currentUser uid=$uid email=${email ?: "unavailable"}",
-                )
-                publishFirebaseDiagnostic(
-                    FirebaseDiagnostic(
-                        status = "CONNECTÉ",
-                        uid = uid,
-                        email = email.orEmpty(),
-                        displayName = displayName.orEmpty(),
-                        event = "FIREBASE_SUCCESS",
-                        error = "",
-                    ),
-                )
+                if (success) Log.d(TAG, "[WEBVIEW_BRIDGE] javascript_callback_success")
+                else Log.e(TAG, "[WEBVIEW_BRIDGE] javascript_callback_error: ${error.orEmpty()}")
             }
         }
     }
@@ -409,8 +435,10 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val SITE_URL = "https://kanto0316.github.io/Album"
         const val SITE_HOST = "kanto0316.github.io"
-        const val GOOGLE_BRIDGE_NAME = "AndroidGoogleSignIn"
+        const val GOOGLE_BRIDGE_NAME = "AndroidAuth"
         const val TAG = "FirebaseAuth"
+        const val WEB_BRIDGE_MAX_ATTEMPTS = 20
+        const val WEB_BRIDGE_RETRY_MS = 250L
 
         val GOOGLE_BUTTON_BRIDGE_SCRIPT = """
             (() => {
@@ -434,7 +462,7 @@ class MainActivity : ComponentActivity() {
 
                 event.preventDefault();
                 event.stopImmediatePropagation();
-                window.AndroidGoogleSignIn.openAccountChooser();
+                window.AndroidAuth.startGoogleSignIn();
               }, true);
             })();
         """.trimIndent()
