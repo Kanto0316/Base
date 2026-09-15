@@ -4,19 +4,36 @@ Application Android légère qui affiche le site distant de PDF by Kanto dans un
 
 ## Fonctionnalités
 
-- chargement automatique de `http://kanto0316.github.io/Album` ;
+- chargement automatique de `https://kanto0316.github.io/Album` ;
 - JavaScript et stockage DOM activés ;
 - navigation des liens et historique dans la WebView ;
-- sélection d'un compte Google via le sélecteur Android natif, sans popup ni redirection Firebase ;
+- connexion Firebase via Google Sign-In Android, sans popup ni redirection Firebase dans la WebView ;
 - message d'erreur avec action de nouvelle tentative lorsque le site est inaccessible.
 
 ## Pont Google natif
 
-Le clic sur le bouton Google existant est intercepté sans modifier sa présentation. Le résultat est
-renvoyé à la page par l'événement JavaScript `android-google-account-result`. Sa propriété `detail`
-contient `{ account, error }` ; `account` expose `email` et `type` lorsque la sélection réussit. La
-page peut aussi déclarer `window.onAndroidGoogleAccountResult(result)`. L'adresse sélectionnée est
-affichée sous le bouton Google existant.
+Renseigner `default_web_client_id` dans `app/src/main/res/values/strings.xml` avec l'identifiant du
+client OAuth **Web** associé au projet Firebase (et non l'identifiant du client Android). Le clic sur
+le bouton Google existant est intercepté sans modifier sa présentation. Android ouvre Google
+Sign-In, demande un ID token, puis appelle `window.firebaseLoginWithToken(idToken)` dans la page.
+
+La page distante doit exposer cette fonction depuis son module Firebase existant, sans créer une
+seconde application Firebase :
+
+```js
+window.firebaseLoginWithToken = async function (idToken) {
+  console.log("Firebase Auth: token Android reçu");
+  const credential = GoogleAuthProvider.credential(idToken);
+  const result = await signInWithCredential(auth, credential);
+  console.log("Firebase Auth : CONNECTÉ");
+  console.log("email", result.user.email);
+  console.log("uid", result.user.uid);
+  return result;
+};
+```
+
+Le flux WebView ne doit appeler ni `signInWithRedirect()` ni `getRedirectResult()` ; l'observateur
+`onAuthStateChanged` existant continue ainsi à piloter l'état utilisateur de l'interface.
 
 ## Architecture
 
