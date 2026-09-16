@@ -657,7 +657,7 @@ class MainActivity : ComponentActivity() {
 
         addView(
             ImageView(context).apply {
-                setImageResource(R.drawable.ic_launcher)
+                setImageResource(R.mipmap.ic_launcher)
                 contentDescription = getString(R.string.splash_logo_description)
             },
             LinearLayout.LayoutParams(dpToPx(112), dpToPx(112)),
