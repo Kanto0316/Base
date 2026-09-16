@@ -691,7 +691,7 @@ class MainActivity : ComponentActivity() {
                 text = getString(R.string.app_name)
                 textSize = 26f
                 gravity = Gravity.CENTER
-                setTextColor(ContextCompat.getColor(context, R.color.brand_primary))
+                setTextColor(ContextCompat.getColor(context, R.color.brand_on_primary))
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
             }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -739,7 +739,8 @@ class MainActivity : ComponentActivity() {
                 text = getString(R.string.splash_loading_data)
                 textSize = 15f
                 gravity = Gravity.CENTER
-                setTextColor(ContextCompat.getColor(context, R.color.brand_secondary))
+                setTextColor(ContextCompat.getColor(context, R.color.brand_on_primary))
+                alpha = SPLASH_LOADING_TEXT_ALPHA
             }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -766,8 +767,8 @@ class MainActivity : ComponentActivity() {
             text = getString(R.string.splash_copyright)
             textSize = 12f
             gravity = Gravity.CENTER
-            setTextColor(ContextCompat.getColor(context, R.color.brand_secondary))
-            alpha = 0.75f
+            setTextColor(ContextCompat.getColor(context, R.color.brand_on_primary))
+            alpha = SPLASH_COPYRIGHT_ALPHA
         }, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -1054,6 +1055,8 @@ class MainActivity : ComponentActivity() {
         const val SPLASH_DOT_MIN_ALPHA = 0.28f
         const val SPLASH_DOT_MIN_SCALE = 0.72f
         const val SPLASH_ICON_START_SCALE = 0.84f
+        const val SPLASH_LOADING_TEXT_ALPHA = 0.85f
+        const val SPLASH_COPYRIGHT_ALPHA = 0.65f
 
         val GOOGLE_BUTTON_BRIDGE_SCRIPT = """
             (() => {

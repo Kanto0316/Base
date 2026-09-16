@@ -2,7 +2,7 @@
     <color name="brand_primary">#415F91</color>
     <color name="brand_on_primary">#FFFFFF</color>
     <color name="brand_secondary">#565F71</color>
-    <color name="splash_background_start">#F7F9FF</color>
-    <color name="splash_background_end">#E7EEFA</color>
+    <color name="splash_background_start">#59B8FF</color>
+    <color name="splash_background_end">#278DDA</color>
     <color name="splash_icon_surface">#FFFFFF</color>
 </resources>
