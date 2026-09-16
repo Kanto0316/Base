@@ -1,7 +1,10 @@
 package com.netk.app
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.DownloadManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -17,14 +20,18 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.JavascriptInterface
+import android.webkit.CookieManager
+import android.webkit.URLUtil
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -40,6 +47,19 @@ class MainActivity : ComponentActivity() {
     private var isFirebaseWebBridgeReady = false
     private var pendingGoogleIdToken: String? = null
     private var pendingFirebaseDiagnostic: FirebaseDiagnostic? = null
+    private var pendingDownload: PendingDownload? = null
+
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val download = pendingDownload
+        pendingDownload = null
+        if (granted && download != null) {
+            enqueueDownload(download)
+        } else if (!granted) {
+            Toast.makeText(this, R.string.download_permission_denied, Toast.LENGTH_LONG).show()
+        }
+    }
 
     private val googleSignInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -117,6 +137,9 @@ class MainActivity : ComponentActivity() {
             addJavascriptInterface(AndroidAuthBridge(), GOOGLE_BRIDGE_NAME)
             Log.d(TAG, "[BRIDGE_CHECK] javascript_interface_added")
             webViewClient = SiteWebViewClient()
+            setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+                handleDownload(url, userAgent, contentDisposition, mimeType)
+            }
         }
 
         val root = FrameLayout(this).apply {
@@ -172,6 +195,60 @@ class MainActivity : ComponentActivity() {
                     error = error.message ?: "Unable to launch Google Sign-In",
                 ),
             )
+        }
+    }
+
+    private fun handleDownload(
+        url: String,
+        userAgent: String?,
+        contentDisposition: String?,
+        mimeType: String?,
+    ) {
+        val uri = Uri.parse(url)
+        if (uri.scheme != "http" && uri.scheme != "https") {
+            Log.e(TAG, "Download rejected: unsupported URL scheme ${uri.scheme.orEmpty()}")
+            Toast.makeText(this, R.string.download_unsupported, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val download = PendingDownload(url, userAgent, contentDisposition, mimeType)
+        if (
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingDownload = download
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            enqueueDownload(download)
+        }
+    }
+
+    private fun enqueueDownload(download: PendingDownload) {
+        val fileName = URLUtil.guessFileName(
+            download.url,
+            download.contentDisposition,
+            download.mimeType,
+        )
+        val request = DownloadManager.Request(Uri.parse(download.url)).apply {
+            setTitle(fileName)
+            setDescription(getString(R.string.download_in_progress))
+            setMimeType(download.mimeType)
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, fileName)
+            download.userAgent?.takeIf(String::isNotBlank)?.let { addRequestHeader("User-Agent", it) }
+            CookieManager.getInstance().getCookie(download.url)
+                ?.takeIf(String::isNotBlank)
+                ?.let { addRequestHeader("Cookie", it) }
+        }
+
+        try {
+            val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            manager.enqueue(request)
+            Toast.makeText(this, R.string.download_started, Toast.LENGTH_SHORT).show()
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "Unable to enqueue download", error)
+            Toast.makeText(this, R.string.download_failed, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -483,6 +560,13 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+
+    private data class PendingDownload(
+        val url: String,
+        val userAgent: String?,
+        val contentDisposition: String?,
+        val mimeType: String?,
+    )
 
     private fun isTrustedSite(url: String?): Boolean {
         val uri = url?.let(Uri::parse) ?: return false

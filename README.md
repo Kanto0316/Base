@@ -7,6 +7,7 @@ Application Android légère qui affiche le site distant de PDF by Kanto dans un
 - chargement automatique de `https://kanto0316.github.io/Album` ;
 - JavaScript et stockage DOM activés ;
 - navigation des liens et historique dans la WebView ;
+- téléchargement des exports HTTP(S) dans le dossier Android `Téléchargements` via `DownloadManager` ;
 - connexion Firebase via Google Sign-In Android, sans popup ni redirection Firebase dans la WebView ;
 - message d'erreur avec action de nouvelle tentative lorsque le site est inaccessible.
 
