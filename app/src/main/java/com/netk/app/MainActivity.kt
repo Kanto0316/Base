@@ -1,6 +1,7 @@
 package com.netk.app
 
 import android.Manifest
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.DownloadManager
@@ -19,6 +20,8 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
@@ -36,6 +39,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -60,6 +64,10 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var errorView: View
+    private lateinit var splashView: View
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var splashDotsAnimator: ValueAnimator? = null
+    private var isSplashVisible = true
     private var accountSelectionInProgress = false
     private var isWebPageLoaded = false
     private var isFirebaseWebBridgeReady = false
@@ -177,7 +185,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        splashView = createSplashView()
         webView = WebView(this).apply {
+            visibility = View.INVISIBLE
             Log.d(TAG, "[BRIDGE_CHECK] webview_created")
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -186,6 +196,7 @@ class MainActivity : ComponentActivity() {
             settings.loadWithOverviewMode = true
             addJavascriptInterface(AndroidAuthBridge(), GOOGLE_BRIDGE_NAME)
             addJavascriptInterface(AndroidDownloadsBridge(), DOWNLOADS_BRIDGE_NAME)
+            addJavascriptInterface(AndroidAppBridge(), APP_BRIDGE_NAME)
             Log.d(TAG, "[BRIDGE_CHECK] javascript_interface_added")
             webViewClient = SiteWebViewClient()
             setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
@@ -228,8 +239,11 @@ class MainActivity : ComponentActivity() {
         root.addView(content, matchParentLayoutParams())
         errorView = createErrorView()
         root.addView(errorView, matchParentLayoutParams())
+        root.addView(splashView, matchParentLayoutParams())
         setContentView(root)
         root.requestApplyInsets()
+        Log.d(TAG, "[SPLASH] affiché")
+        mainHandler.postDelayed(splashTimeout, SPLASH_TIMEOUT_MS)
 
         if (savedInstanceState == null) {
             loadSite()
@@ -634,6 +648,67 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    private fun createSplashView(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setBackgroundColor(Color.WHITE)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        contentDescription = getString(R.string.splash_loading)
+
+        addView(
+            ImageView(context).apply {
+                setImageResource(R.drawable.ic_launcher)
+                contentDescription = getString(R.string.splash_logo_description)
+            },
+            LinearLayout.LayoutParams(dpToPx(112), dpToPx(112)),
+        )
+        addView(
+            TextView(context).apply {
+                text = getString(R.string.app_name)
+                textSize = 26f
+                gravity = Gravity.CENTER
+                setTextColor(ContextCompat.getColor(context, R.color.brand_primary))
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dpToPx(20) },
+        )
+        addView(
+            TextView(context).apply {
+                textSize = 28f
+                gravity = Gravity.CENTER
+                setTextColor(ContextCompat.getColor(context, R.color.brand_secondary))
+                splashDotsAnimator = ValueAnimator.ofInt(1, 3).apply {
+                    duration = SPLASH_DOTS_DURATION_MS
+                    repeatCount = ValueAnimator.INFINITE
+                    addUpdateListener { text = ".".repeat(it.animatedValue as Int) }
+                    start()
+                }
+            },
+            LinearLayout.LayoutParams(dpToPx(72), ViewGroup.LayoutParams.WRAP_CONTENT),
+        )
+    }
+
+    private fun dpToPx(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private val splashTimeout = Runnable {
+        Log.w(TAG, "[SPLASH] délai dépassé, affichage de la WebView")
+        hideSplash()
+    }
+
+    private fun hideSplash() {
+        if (!isSplashVisible) return
+        isSplashVisible = false
+        mainHandler.removeCallbacks(splashTimeout)
+        splashDotsAnimator?.cancel()
+        splashDotsAnimator = null
+        webView.visibility = View.VISIBLE
+        webView.alpha = 1f
+        splashView.visibility = View.GONE
+        Log.d(TAG, "[SPLASH] splash masqué")
+    }
+
     private fun loadSite() {
         if (!hasInternetConnection()) {
             showError()
@@ -735,6 +810,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(splashTimeout)
+        splashDotsAnimator?.cancel()
+        splashDotsAnimator = null
         exitConfirmationDialog?.dismiss()
         exitConfirmationDialog = null
         webView.stopLoading()
@@ -801,6 +879,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private inner class AndroidAppBridge {
+        @JavascriptInterface
+        fun readyFirestore() {
+            webView.post {
+                if (!isTrustedSite(webView.url)) {
+                    Log.w(TAG, "[SPLASH] signal ignoré depuis une page non approuvée")
+                    return@post
+                }
+                Log.d(TAG, "[SPLASH] bridge prêt reçu")
+                hideSplash()
+            }
+        }
+    }
+
     private data class FirebaseDiagnostic(
         val status: String,
         val uid: String,
@@ -853,6 +945,7 @@ class MainActivity : ComponentActivity() {
         const val SITE_HOST = "kanto0316.github.io"
         const val GOOGLE_BRIDGE_NAME = "AndroidAuth"
         const val DOWNLOADS_BRIDGE_NAME = "AndroidDownloads"
+        const val APP_BRIDGE_NAME = "AndroidApp"
         const val DEFAULT_EXPORT_MIME_TYPE = "application/octet-stream"
         const val EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         const val DOWNLOAD_NOTIFICATION_CHANNEL_ID = "downloads"
@@ -860,6 +953,8 @@ class MainActivity : ComponentActivity() {
         const val TAG = "FirebaseAuth"
         const val WEB_BRIDGE_MAX_ATTEMPTS = 20
         const val WEB_BRIDGE_RETRY_MS = 250L
+        const val SPLASH_TIMEOUT_MS = 12_000L
+        const val SPLASH_DOTS_DURATION_MS = 900L
 
         val GOOGLE_BUTTON_BRIDGE_SCRIPT = """
             (() => {

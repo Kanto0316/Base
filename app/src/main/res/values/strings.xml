@@ -8,6 +8,8 @@
     <string name="export_saved">Fichier enregistré dans Téléchargements</string>
     <string name="site_unavailable">Le site est inaccessible. Vérifiez votre connexion Internet, puis réessayez.</string>
     <string name="retry">Réessayer</string>
+    <string name="splash_loading">Chargement de Suivi Matériel</string>
+    <string name="splash_logo_description">Logo Suivi Matériel</string>
     <!-- OAuth 2.0 Web client ID authorized for the Firebase project's Android app. -->
     <string name="default_web_client_id" translatable="false">560283994192-ede7aa7a3714c439542955.apps.googleusercontent.com</string>
 </resources>
