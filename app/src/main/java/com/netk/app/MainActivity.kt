@@ -408,6 +408,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showDownloadNotification(fileName: String, uri: Uri) {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingExportNotification = fileName to uri
+            Log.d(TAG, "[EXPORT_NOTIFICATION] requesting POST_NOTIFICATIONS permission")
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+
         val notificationManager = ContextCompat.getSystemService(
             this,
             NotificationManager::class.java,
@@ -425,17 +436,6 @@ class MainActivity : ComponentActivity() {
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ),
             )
-        }
-
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            pendingExportNotification = fileName to uri
-            Log.d(TAG, "[EXPORT_NOTIFICATION] requesting POST_NOTIFICATIONS permission")
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
         }
 
         val openFileIntent = Intent(Intent.ACTION_VIEW).apply {
