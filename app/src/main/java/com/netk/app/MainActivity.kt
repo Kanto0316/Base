@@ -417,6 +417,10 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        val notificationId = System.currentTimeMillis().toInt()
+        Log.d(TAG, "[DOWNLOAD_NOTIFICATION] notificationId: $notificationId")
+        Log.d(TAG, "[DOWNLOAD_NOTIFICATION] fileName: $fileName")
+
         val notificationManager = ContextCompat.getSystemService(
             this,
             NotificationManager::class.java,
@@ -442,7 +446,7 @@ class MainActivity : ComponentActivity() {
         }
         val openFilePendingIntent = PendingIntent.getActivity(
             this,
-            DOWNLOAD_NOTIFICATION_ID,
+            notificationId,
             openFileIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -453,7 +457,7 @@ class MainActivity : ComponentActivity() {
             .setContentIntent(openFilePendingIntent)
             .setAutoCancel(true)
             .build()
-        notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, notification)
+        notificationManager.notify(notificationId, notification)
         Log.d(TAG, "[EXPORT_NOTIFICATION] notification displayed")
     }
 
@@ -823,7 +827,6 @@ class MainActivity : ComponentActivity() {
         const val DEFAULT_EXPORT_MIME_TYPE = "application/octet-stream"
         const val EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         const val DOWNLOAD_NOTIFICATION_CHANNEL_ID = "downloads"
-        const val DOWNLOAD_NOTIFICATION_ID = 1
         const val MEDIA_SCAN_TIMEOUT_SECONDS = 10L
         const val TAG = "FirebaseAuth"
         const val WEB_BRIDGE_MAX_ATTEMPTS = 20
