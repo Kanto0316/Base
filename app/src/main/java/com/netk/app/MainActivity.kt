@@ -468,13 +468,16 @@ class MainActivity : ComponentActivity() {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(
-                NotificationChannel(
-                    DOWNLOAD_NOTIFICATION_CHANNEL_ID,
-                    "Téléchargements",
-                    NotificationManager.IMPORTANCE_DEFAULT,
-                ),
-            )
+            val channel = NotificationChannel(
+                DOWNLOAD_NOTIFICATION_CHANNEL_ID,
+                "Téléchargements",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                setSound(null, null)
+                enableVibration(false)
+                enableLights(false)
+            }
+            notificationManager.createNotificationChannel(channel)
         }
 
         val openFileIntent = Intent(Intent.ACTION_VIEW).apply {
@@ -492,6 +495,7 @@ class MainActivity : ComponentActivity() {
             .setContentTitle("Téléchargement terminé")
             .setContentText(fileName)
             .setContentIntent(openFilePendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
         notificationManager.notify(notificationId, notification)
