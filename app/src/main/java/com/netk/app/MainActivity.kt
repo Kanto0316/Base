@@ -73,7 +73,11 @@ class MainActivity : ComponentActivity() {
         val notification = pendingExportNotification
         pendingExportNotification = null
         if (granted && notification != null) {
+            Log.d(TAG, "[EXPORT_NOTIFICATION] before showDownloadNotification after permission grant")
             showDownloadNotification(notification.first, notification.second)
+            Log.d(TAG, "[EXPORT_NOTIFICATION] after showDownloadNotification after permission grant")
+        } else if (!granted) {
+            Log.w(TAG, "[EXPORT_NOTIFICATION] POST_NOTIFICATIONS permission denied")
         }
     }
 
@@ -347,7 +351,9 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "[EXPORT] Android bridge download OK")
                 runOnUiThread {
                     Toast.makeText(this, R.string.export_saved, Toast.LENGTH_SHORT).show()
+                    Log.d(TAG, "[EXPORT_NOTIFICATION] before showDownloadNotification after export")
                     showDownloadNotification(export.fileName, uri)
+                    Log.d(TAG, "[EXPORT_NOTIFICATION] after showDownloadNotification after export")
                 }
             } catch (error: Exception) {
                 showExportError(error)
@@ -402,24 +408,36 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showDownloadNotification(fileName: String, uri: Uri) {
+        val notificationManager = ContextCompat.getSystemService(
+            this,
+            NotificationManager::class.java,
+        )
+        if (notificationManager == null) {
+            Log.e(TAG, "[EXPORT_NOTIFICATION] NotificationManager unavailable")
+            return
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notificationManager.createNotificationChannel(
+                NotificationChannel(
+                    DOWNLOAD_NOTIFICATION_CHANNEL_ID,
+                    "Téléchargements",
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ),
+            )
+        }
+
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             pendingExportNotification = fileName to uri
+            Log.d(TAG, "[EXPORT_NOTIFICATION] requesting POST_NOTIFICATIONS permission")
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
 
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                DOWNLOAD_NOTIFICATION_CHANNEL_ID,
-                "Téléchargements",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ),
-        )
         val openFileIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, EXCEL_MIME_TYPE)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -431,13 +449,14 @@ class MainActivity : ComponentActivity() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, DOWNLOAD_NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Téléchargement terminé")
             .setContentText(fileName)
             .setContentIntent(openFilePendingIntent)
             .setAutoCancel(true)
             .build()
         notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, notification)
+        Log.d(TAG, "[EXPORT_NOTIFICATION] notification displayed")
     }
 
     private fun showExportError(error: Exception) {
