@@ -1,6 +1,8 @@
 package com.netk.app
 
 import android.Manifest
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.AlertDialog
@@ -29,6 +31,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.animation.DecelerateInterpolator
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -66,7 +69,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var errorView: View
     private lateinit var splashView: View
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var splashDotsAnimator: ValueAnimator? = null
+    private val splashDotsAnimators = mutableListOf<ValueAnimator>()
+    private var splashIconAnimator: AnimatorSet? = null
     private var isSplashVisible = true
     private var accountSelectionInProgress = false
     private var isWebPageLoaded = false
@@ -648,46 +652,131 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    private fun createSplashView(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
-        setBackgroundColor(Color.WHITE)
+    private fun createSplashView(): View = FrameLayout(this).apply {
+        setBackgroundResource(R.drawable.splash_background)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
         contentDescription = getString(R.string.splash_loading)
 
-        addView(
-            ImageView(context).apply {
-                setImageResource(R.mipmap.ic_launcher)
-                contentDescription = getString(R.string.splash_logo_description)
-            },
-            LinearLayout.LayoutParams(dpToPx(112), dpToPx(112)),
-        )
-        addView(
-            TextView(context).apply {
+        val centralContent = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+
+            val iconCard = FrameLayout(context).apply {
+                background = ContextCompat.getDrawable(context, R.drawable.splash_icon_background)
+                elevation = dpToPx(10).toFloat()
+                alpha = 0f
+                scaleX = SPLASH_ICON_START_SCALE
+                scaleY = SPLASH_ICON_START_SCALE
+
+                addView(
+                    ImageView(context).apply {
+                        setImageResource(R.mipmap.ic_launcher)
+                        contentDescription = getString(R.string.splash_logo_description)
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        background = ContextCompat.getDrawable(
+                            context,
+                            R.drawable.splash_icon_background,
+                        )
+                        clipToOutline = true
+                    },
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ).apply { setMargins(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4)) },
+                )
+            }
+            addView(iconCard, LinearLayout.LayoutParams(dpToPx(120), dpToPx(120)))
+
+            addView(TextView(context).apply {
                 text = getString(R.string.app_name)
                 textSize = 26f
                 gravity = Gravity.CENTER
                 setTextColor(ContextCompat.getColor(context, R.color.brand_primary))
-            },
-            LinearLayout.LayoutParams(
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dpToPx(20) },
-        )
-        addView(
-            TextView(context).apply {
-                textSize = 28f
+            ).apply { topMargin = dpToPx(24) })
+
+            val dots = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                setTextColor(ContextCompat.getColor(context, R.color.brand_secondary))
-                splashDotsAnimator = ValueAnimator.ofInt(1, 3).apply {
+            }
+            repeat(SPLASH_DOT_COUNT) { index ->
+                val dot = View(context).apply {
+                    setBackgroundResource(R.drawable.splash_dot)
+                    alpha = SPLASH_DOT_MIN_ALPHA
+                }
+                dots.addView(
+                    dot,
+                    LinearLayout.LayoutParams(dpToPx(9), dpToPx(9)).apply {
+                        marginStart = dpToPx(5)
+                        marginEnd = dpToPx(5)
+                    },
+                )
+                splashDotsAnimators += ValueAnimator.ofFloat(0f, 1f, 0f).apply {
                     duration = SPLASH_DOTS_DURATION_MS
+                    startDelay = index * SPLASH_DOT_DELAY_MS
                     repeatCount = ValueAnimator.INFINITE
-                    addUpdateListener { text = ".".repeat(it.animatedValue as Int) }
+                    addUpdateListener {
+                        val progress = it.animatedValue as Float
+                        dot.alpha = SPLASH_DOT_MIN_ALPHA +
+                            progress * (1f - SPLASH_DOT_MIN_ALPHA)
+                        val scale = SPLASH_DOT_MIN_SCALE +
+                            progress * (1f - SPLASH_DOT_MIN_SCALE)
+                        dot.scaleX = scale
+                        dot.scaleY = scale
+                    }
                     start()
                 }
-            },
-            LinearLayout.LayoutParams(dpToPx(72), ViewGroup.LayoutParams.WRAP_CONTENT),
-        )
+            }
+            addView(dots, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dpToPx(28),
+            ).apply { topMargin = dpToPx(22) })
+
+            addView(TextView(context).apply {
+                text = getString(R.string.splash_loading_data)
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setTextColor(ContextCompat.getColor(context, R.color.brand_secondary))
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dpToPx(8) })
+
+            splashIconAnimator = AnimatorSet().apply {
+                playTogether(
+                    ObjectAnimator.ofFloat(iconCard, View.ALPHA, 0f, 1f),
+                    ObjectAnimator.ofFloat(iconCard, View.SCALE_X, SPLASH_ICON_START_SCALE, 1f),
+                    ObjectAnimator.ofFloat(iconCard, View.SCALE_Y, SPLASH_ICON_START_SCALE, 1f),
+                )
+                duration = SPLASH_ICON_ANIMATION_MS
+                interpolator = DecelerateInterpolator()
+                start()
+            }
+        }
+        addView(centralContent, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER,
+        ))
+
+        addView(TextView(context).apply {
+            text = getString(R.string.splash_copyright)
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(ContextCompat.getColor(context, R.color.brand_secondary))
+            alpha = 0.75f
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+        ).apply {
+            leftMargin = dpToPx(24)
+            rightMargin = dpToPx(24)
+            bottomMargin = dpToPx(24)
+        })
     }
 
     private fun dpToPx(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -701,8 +790,10 @@ class MainActivity : ComponentActivity() {
         if (!isSplashVisible) return
         isSplashVisible = false
         mainHandler.removeCallbacks(splashTimeout)
-        splashDotsAnimator?.cancel()
-        splashDotsAnimator = null
+        splashDotsAnimators.forEach(ValueAnimator::cancel)
+        splashDotsAnimators.clear()
+        splashIconAnimator?.cancel()
+        splashIconAnimator = null
         webView.visibility = View.VISIBLE
         webView.alpha = 1f
         splashView.visibility = View.GONE
@@ -811,8 +902,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(splashTimeout)
-        splashDotsAnimator?.cancel()
-        splashDotsAnimator = null
+        splashDotsAnimators.forEach(ValueAnimator::cancel)
+        splashDotsAnimators.clear()
+        splashIconAnimator?.cancel()
+        splashIconAnimator = null
         exitConfirmationDialog?.dismiss()
         exitConfirmationDialog = null
         webView.stopLoading()
@@ -955,6 +1048,12 @@ class MainActivity : ComponentActivity() {
         const val WEB_BRIDGE_RETRY_MS = 250L
         const val SPLASH_TIMEOUT_MS = 12_000L
         const val SPLASH_DOTS_DURATION_MS = 900L
+        const val SPLASH_DOT_DELAY_MS = 160L
+        const val SPLASH_ICON_ANIMATION_MS = 650L
+        const val SPLASH_DOT_COUNT = 3
+        const val SPLASH_DOT_MIN_ALPHA = 0.28f
+        const val SPLASH_DOT_MIN_SCALE = 0.72f
+        const val SPLASH_ICON_START_SCALE = 0.84f
 
         val GOOGLE_BUTTON_BRIDGE_SCRIPT = """
             (() => {
