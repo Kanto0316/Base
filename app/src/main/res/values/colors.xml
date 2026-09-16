@@ -5,4 +5,9 @@
     <color name="splash_background_start">#59B8FF</color>
     <color name="splash_background_end">#278DDA</color>
     <color name="splash_icon_surface">#FFFFFF</color>
+    <color name="network_blue_light">#59B8FF</color>
+    <color name="network_blue_dark">#278DDA</color>
+    <color name="error_background">#F4F7FB</color>
+    <color name="error_title">#1F2A37</color>
+    <color name="error_message">#6B7280</color>
 </resources>

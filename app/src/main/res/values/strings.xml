@@ -6,8 +6,12 @@
     <string name="download_permission_denied">Autorisation de stockage requise pour télécharger le fichier</string>
     <string name="download_unsupported">Ce type de téléchargement n’est pas pris en charge</string>
     <string name="export_saved">Fichier enregistré dans Téléchargements</string>
-    <string name="site_unavailable">Le site est inaccessible. Vérifiez votre connexion Internet, puis réessayez.</string>
+    <string name="connection_impossible">Connexion impossible</string>
+    <string name="site_unavailable">Vérifiez votre connexion Internet, puis réessayez.</string>
     <string name="retry">Réessayer</string>
+    <string name="network_settings">Paramètres réseau</string>
+    <string name="network_settings_unavailable">Impossible d’ouvrir les paramètres réseau.</string>
+    <string name="network_error_icon_description">Réseau indisponible</string>
     <string name="splash_loading">Chargement de Suivi Matériel</string>
     <string name="splash_loading_data">Chargement des données…</string>
     <string name="splash_copyright">© 2026 Suivi Matériel</string>

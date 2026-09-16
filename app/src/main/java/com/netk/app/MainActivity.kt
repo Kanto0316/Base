@@ -10,6 +10,7 @@ import android.app.DownloadManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -25,6 +26,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.view.Gravity
@@ -636,20 +638,76 @@ class MainActivity : ComponentActivity() {
     private fun createErrorView(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        setPadding(48, 48, 48, 48)
-        setBackgroundColor(Color.WHITE)
+        setPadding(dpToPx(32), dpToPx(48), dpToPx(32), dpToPx(48))
+        setBackgroundColor(ContextCompat.getColor(context, R.color.error_background))
         visibility = View.GONE
 
+        addView(ImageView(context).apply {
+            setImageResource(R.drawable.ic_network_unavailable)
+            contentDescription = getString(R.string.network_error_icon_description)
+        }, LinearLayout.LayoutParams(dpToPx(96), dpToPx(96)).apply {
+            bottomMargin = dpToPx(24)
+        })
+        addView(TextView(context).apply {
+            text = getString(R.string.connection_impossible)
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(ContextCompat.getColor(context, R.color.error_title))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { bottomMargin = dpToPx(12) })
         addView(TextView(context).apply {
             text = getString(R.string.site_unavailable)
-            textSize = 18f
+            textSize = 16f
             gravity = Gravity.CENTER
-            setTextColor(Color.DKGRAY)
-        })
+            setTextColor(ContextCompat.getColor(context, R.color.error_message))
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { bottomMargin = dpToPx(32) })
         addView(Button(context).apply {
             text = getString(R.string.retry)
+            setTextColor(ContextCompat.getColor(context, R.color.brand_on_primary))
+            background = ContextCompat.getDrawable(context, R.drawable.network_button_primary)
             setOnClickListener { loadSite() }
-        })
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dpToPx(52),
+        ).apply { bottomMargin = dpToPx(12) })
+        addView(Button(context).apply {
+            text = getString(R.string.network_settings)
+            setTextColor(ContextCompat.getColor(context, R.color.network_blue_dark))
+            background = ContextCompat.getDrawable(context, R.drawable.network_button_secondary)
+            setOnClickListener { openNetworkSettings() }
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dpToPx(52),
+        ))
+    }
+
+    private fun openNetworkSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                startActivity(Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY))
+                return
+            } catch (error: ActivityNotFoundException) {
+                Log.w(TAG, "Internet connectivity panel unavailable; using wireless settings", error)
+            } catch (error: SecurityException) {
+                Log.w(TAG, "Internet connectivity panel forbidden; using wireless settings", error)
+            }
+        }
+
+        try {
+            startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+        } catch (error: ActivityNotFoundException) {
+            Log.e(TAG, "Wireless settings unavailable", error)
+            Toast.makeText(this, R.string.network_settings_unavailable, Toast.LENGTH_LONG).show()
+        } catch (error: SecurityException) {
+            Log.e(TAG, "Wireless settings forbidden", error)
+            Toast.makeText(this, R.string.network_settings_unavailable, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun createSplashView(): View = FrameLayout(this).apply {
