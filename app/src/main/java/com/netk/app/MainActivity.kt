@@ -3,8 +3,12 @@ package com.netk.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
@@ -36,6 +40,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -45,6 +50,9 @@ import com.google.firebase.auth.GoogleAuthProvider
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -57,6 +65,17 @@ class MainActivity : ComponentActivity() {
     private var pendingFirebaseDiagnostic: FirebaseDiagnostic? = null
     private var pendingDownload: PendingDownload? = null
     private var pendingExport: PendingExport? = null
+    private var pendingExportNotification: Pair<String, Uri>? = null
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val notification = pendingExportNotification
+        pendingExportNotification = null
+        if (granted && notification != null) {
+            showDownloadNotification(notification.first, notification.second)
+        }
+    }
 
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -320,7 +339,7 @@ class MainActivity : ComponentActivity() {
     private fun saveExportAsync(export: PendingExport) {
         Thread {
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     saveExportWithMediaStore(export)
                 } else {
                     saveLegacyExport(export)
@@ -328,6 +347,7 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "[EXPORT] Android bridge download OK")
                 runOnUiThread {
                     Toast.makeText(this, R.string.export_saved, Toast.LENGTH_SHORT).show()
+                    showDownloadNotification(export.fileName, uri)
                 }
             } catch (error: Exception) {
                 showExportError(error)
@@ -335,7 +355,7 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    private fun saveExportWithMediaStore(export: PendingExport) {
+    private fun saveExportWithMediaStore(export: PendingExport): Uri {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, export.fileName)
             put(MediaStore.Downloads.MIME_TYPE, export.mimeType)
@@ -350,6 +370,7 @@ class MainActivity : ComponentActivity() {
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
             contentResolver.update(uri, values, null, null)
+            return uri
         } catch (error: Exception) {
             contentResolver.delete(uri, null, null)
             throw error
@@ -357,19 +378,66 @@ class MainActivity : ComponentActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun saveLegacyExport(export: PendingExport) {
+    private fun saveLegacyExport(export: PendingExport): Uri {
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if (!downloads.exists() && !downloads.mkdirs()) {
             throw IOException("Unable to create the Downloads directory")
         }
         val outputFile = File(downloads, export.fileName)
         FileOutputStream(outputFile).use { it.write(export.bytes) }
+        val scanCompleted = CountDownLatch(1)
+        val scannedUri = AtomicReference<Uri?>()
         MediaScannerConnection.scanFile(
             this,
             arrayOf(outputFile.absolutePath),
             arrayOf(export.mimeType),
-            null,
+        ) { _, uri ->
+            scannedUri.set(uri)
+            scanCompleted.countDown()
+        }
+        if (!scanCompleted.await(MEDIA_SCAN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            throw IOException("Timed out while indexing the download")
+        }
+        return scannedUri.get() ?: throw IOException("Unable to index the download")
+    }
+
+    private fun showDownloadNotification(fileName: String, uri: Uri) {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingExportNotification = fileName to uri
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                DOWNLOAD_NOTIFICATION_CHANNEL_ID,
+                "Téléchargements",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
         )
+        val openFileIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, EXCEL_MIME_TYPE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val openFilePendingIntent = PendingIntent.getActivity(
+            this,
+            DOWNLOAD_NOTIFICATION_ID,
+            openFileIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(this, DOWNLOAD_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher)
+            .setContentTitle("Téléchargement terminé")
+            .setContentText(fileName)
+            .setContentIntent(openFilePendingIntent)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, notification)
     }
 
     private fun showExportError(error: Exception) {
@@ -719,6 +787,10 @@ class MainActivity : ComponentActivity() {
         const val GOOGLE_BRIDGE_NAME = "AndroidAuth"
         const val DOWNLOADS_BRIDGE_NAME = "AndroidDownloads"
         const val DEFAULT_EXPORT_MIME_TYPE = "application/octet-stream"
+        const val EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        const val DOWNLOAD_NOTIFICATION_CHANNEL_ID = "downloads"
+        const val DOWNLOAD_NOTIFICATION_ID = 1
+        const val MEDIA_SCAN_TIMEOUT_SECONDS = 10L
         const val TAG = "FirebaseAuth"
         const val WEB_BRIDGE_MAX_ATTEMPTS = 20
         const val WEB_BRIDGE_RETRY_MS = 250L
