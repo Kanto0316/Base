@@ -66,10 +66,12 @@ class MainActivity : ComponentActivity() {
     private var pendingDownload: PendingDownload? = null
     private var pendingExport: PendingExport? = null
     private var pendingExportNotification: Pair<String, Uri>? = null
+    private var notificationPermissionRequestInProgress = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        notificationPermissionRequestInProgress = false
         val notification = pendingExportNotification
         pendingExportNotification = null
         if (granted && notification != null) {
@@ -217,6 +219,8 @@ class MainActivity : ComponentActivity() {
         } else {
             webView.restoreState(savedInstanceState)
         }
+
+        requestNotificationPermissionIfNeeded()
     }
 
     private fun showGoogleAccountChooser() {
@@ -408,14 +412,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showDownloadNotification(fileName: String, uri: Uri) {
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
+        if (requestNotificationPermissionIfNeeded()) {
             pendingExportNotification = fileName to uri
-            Log.d(TAG, "[EXPORT_NOTIFICATION] requesting POST_NOTIFICATIONS permission")
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
 
@@ -457,6 +455,23 @@ class MainActivity : ComponentActivity() {
             .build()
         notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, notification)
         Log.d(TAG, "[EXPORT_NOTIFICATION] notification displayed")
+    }
+
+    private fun requestNotificationPermissionIfNeeded(): Boolean {
+        if (
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+
+        if (!notificationPermissionRequestInProgress) {
+            notificationPermissionRequestInProgress = true
+            Log.d(TAG, "[EXPORT_NOTIFICATION] requesting POST_NOTIFICATIONS permission")
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        return true
     }
 
     private fun showExportError(error: Exception) {
