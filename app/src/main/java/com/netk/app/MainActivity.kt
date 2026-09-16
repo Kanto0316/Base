@@ -2,6 +2,7 @@ package com.netk.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.app.DownloadManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -39,6 +40,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -67,6 +69,7 @@ class MainActivity : ComponentActivity() {
     private var pendingExport: PendingExport? = null
     private var pendingExportNotification: Pair<String, Uri>? = null
     private var notificationPermissionRequestInProgress = false
+    private var exitConfirmationDialog: AlertDialog? = null
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -189,6 +192,20 @@ class MainActivity : ComponentActivity() {
                 handleDownload(url, userAgent, contentDisposition, mimeType)
             }
         }
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    Log.d(TAG, "[APP_EXIT] retour intercepté")
+                    if (webView.canGoBack()) {
+                        webView.goBack()
+                    } else {
+                        showExitConfirmation()
+                    }
+                }
+            },
+        )
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.WHITE)
@@ -698,16 +715,28 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
     }
 
-    @Deprecated("Deprecated in Android, retained for compatibility with older supported versions")
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
+    private fun showExitConfirmation() {
+        if (exitConfirmationDialog?.isShowing == true) return
+
+        Log.d(TAG, "[APP_EXIT] confirmation affichée")
+        exitConfirmationDialog = AlertDialog.Builder(this)
+            .setTitle("Quitter l'application ?")
+            .setMessage("Voulez-vous fermer Suivi Matériel ?")
+            .setNegativeButton("Non", null)
+            .setPositiveButton("Oui") { _, _ ->
+                Log.d(TAG, "[APP_EXIT] application fermée")
+                finishAffinity()
+            }
+            .create()
+            .also { dialog ->
+                dialog.setOnDismissListener { exitConfirmationDialog = null }
+                dialog.show()
+            }
     }
 
     override fun onDestroy() {
+        exitConfirmationDialog?.dismiss()
+        exitConfirmationDialog = null
         webView.stopLoading()
         webView.webViewClient = WebViewClient()
         webView.destroy()
