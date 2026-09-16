@@ -685,18 +685,21 @@ class MainActivity : ComponentActivity() {
                     ).apply { setMargins(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4)) },
                 )
             }
-            addView(iconCard, LinearLayout.LayoutParams(dpToPx(120), dpToPx(120)))
+            addView(iconCard, LinearLayout.LayoutParams(dpToPx(108), dpToPx(108)))
 
             addView(TextView(context).apply {
                 text = getString(R.string.app_name)
                 textSize = 26f
                 gravity = Gravity.CENTER
                 setTextColor(ContextCompat.getColor(context, R.color.brand_on_primary))
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL,
+                )
             }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dpToPx(24) })
+            ).apply { topMargin = dpToPx(20) })
 
             val dots = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -733,7 +736,7 @@ class MainActivity : ComponentActivity() {
             addView(dots, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dpToPx(28),
-            ).apply { topMargin = dpToPx(22) })
+            ).apply { topMargin = dpToPx(18) })
 
             addView(TextView(context).apply {
                 text = getString(R.string.splash_loading_data)
@@ -744,7 +747,7 @@ class MainActivity : ComponentActivity() {
             }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dpToPx(8) })
+            ).apply { topMargin = dpToPx(10) })
 
             splashIconAnimator = AnimatorSet().apply {
                 playTogether(
