@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">PDF by Kanto</string>
+    <string name="app_name">Suivi Matériel</string>
     <string name="download_started">Téléchargement démarré</string>
     <string name="download_in_progress">Téléchargement du fichier exporté</string>
     <string name="download_failed">Impossible de télécharger le fichier</string>

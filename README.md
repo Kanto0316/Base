@@ -1,6 +1,6 @@
-# PDF by Kanto
+# Suivi Matériel
 
-Application Android légère qui affiche le site distant de PDF by Kanto dans une WebView.
+Application Android légère qui affiche le site distant de Suivi Matériel dans une WebView.
 
 ## Fonctionnalités
 
