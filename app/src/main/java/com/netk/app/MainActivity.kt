@@ -3,14 +3,19 @@ package com.netk.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -37,6 +42,9 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
@@ -48,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var pendingGoogleIdToken: String? = null
     private var pendingFirebaseDiagnostic: FirebaseDiagnostic? = null
     private var pendingDownload: PendingDownload? = null
+    private var pendingExport: PendingExport? = null
 
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -58,6 +67,19 @@ class MainActivity : ComponentActivity() {
             enqueueDownload(download)
         } else if (!granted) {
             Toast.makeText(this, R.string.download_permission_denied, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val exportPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val export = pendingExport
+        pendingExport = null
+        if (granted && export != null) {
+            saveExportAsync(export)
+        } else if (!granted) {
+            Toast.makeText(this, R.string.download_permission_denied, Toast.LENGTH_LONG).show()
+            Log.e(TAG, "[EXPORT] Android bridge error: storage permission denied")
         }
     }
 
@@ -135,6 +157,7 @@ class MainActivity : ComponentActivity() {
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
             addJavascriptInterface(AndroidAuthBridge(), GOOGLE_BRIDGE_NAME)
+            addJavascriptInterface(AndroidDownloadsBridge(), DOWNLOADS_BRIDGE_NAME)
             Log.d(TAG, "[BRIDGE_CHECK] javascript_interface_added")
             webViewClient = SiteWebViewClient()
             setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
@@ -248,6 +271,110 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, R.string.download_started, Toast.LENGTH_SHORT).show()
         } catch (error: RuntimeException) {
             Log.e(TAG, "Unable to enqueue download", error)
+            Toast.makeText(this, R.string.download_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleExport(fileName: String, mimeType: String, base64: String) {
+        webView.post {
+            if (!isTrustedSite(webView.url)) {
+                Log.e(TAG, "[EXPORT] Android bridge error: untrusted page")
+                return@post
+            }
+
+            val safeFileName = File(fileName).name.takeIf { it.isNotBlank() && it != "." }
+            if (safeFileName == null) {
+                showExportError(IllegalArgumentException("Invalid file name"))
+                return@post
+            }
+
+            val export = try {
+                val encodedContent = if (base64.startsWith("data:")) {
+                    base64.substringAfter(',', missingDelimiterValue = "")
+                } else {
+                    base64
+                }
+                PendingExport(
+                    fileName = safeFileName,
+                    mimeType = mimeType.ifBlank { DEFAULT_EXPORT_MIME_TYPE },
+                    bytes = Base64.decode(encodedContent, Base64.DEFAULT),
+                )
+            } catch (error: IllegalArgumentException) {
+                showExportError(error)
+                return@post
+            }
+
+            if (
+                Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                pendingExport = export
+                exportPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            } else {
+                saveExportAsync(export)
+            }
+        }
+    }
+
+    private fun saveExportAsync(export: PendingExport) {
+        Thread {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    saveExportWithMediaStore(export)
+                } else {
+                    saveLegacyExport(export)
+                }
+                Log.d(TAG, "[EXPORT] Android bridge download OK")
+                runOnUiThread {
+                    Toast.makeText(this, R.string.export_saved, Toast.LENGTH_SHORT).show()
+                }
+            } catch (error: Exception) {
+                showExportError(error)
+            }
+        }.start()
+    }
+
+    private fun saveExportWithMediaStore(export: PendingExport) {
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, export.fileName)
+            put(MediaStore.Downloads.MIME_TYPE, export.mimeType)
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IOException("Unable to create the download")
+        try {
+            contentResolver.openOutputStream(uri)?.use { it.write(export.bytes) }
+                ?: throw IOException("Unable to open the download")
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+        } catch (error: Exception) {
+            contentResolver.delete(uri, null, null)
+            throw error
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun saveLegacyExport(export: PendingExport) {
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!downloads.exists() && !downloads.mkdirs()) {
+            throw IOException("Unable to create the Downloads directory")
+        }
+        val outputFile = File(downloads, export.fileName)
+        FileOutputStream(outputFile).use { it.write(export.bytes) }
+        MediaScannerConnection.scanFile(
+            this,
+            arrayOf(outputFile.absolutePath),
+            arrayOf(export.mimeType),
+            null,
+        )
+    }
+
+    private fun showExportError(error: Exception) {
+        Log.e(TAG, "[EXPORT] Android bridge error", error)
+        runOnUiThread {
             Toast.makeText(this, R.string.download_failed, Toast.LENGTH_LONG).show()
         }
     }
@@ -532,6 +659,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private inner class AndroidDownloadsBridge {
+        @JavascriptInterface
+        fun saveFile(fileName: String, mimeType: String, base64: String) {
+            handleExport(fileName, mimeType, base64)
+        }
+    }
+
     private data class FirebaseDiagnostic(
         val status: String,
         val uid: String,
@@ -568,6 +702,12 @@ class MainActivity : ComponentActivity() {
         val mimeType: String?,
     )
 
+    private data class PendingExport(
+        val fileName: String,
+        val mimeType: String,
+        val bytes: ByteArray,
+    )
+
     private fun isTrustedSite(url: String?): Boolean {
         val uri = url?.let(Uri::parse) ?: return false
         return uri.host == SITE_HOST && uri.scheme == "https"
@@ -577,6 +717,8 @@ class MainActivity : ComponentActivity() {
         const val SITE_URL = "https://kanto0316.github.io/Album"
         const val SITE_HOST = "kanto0316.github.io"
         const val GOOGLE_BRIDGE_NAME = "AndroidAuth"
+        const val DOWNLOADS_BRIDGE_NAME = "AndroidDownloads"
+        const val DEFAULT_EXPORT_MIME_TYPE = "application/octet-stream"
         const val TAG = "FirebaseAuth"
         const val WEB_BRIDGE_MAX_ATTEMPTS = 20
         const val WEB_BRIDGE_RETRY_MS = 250L
