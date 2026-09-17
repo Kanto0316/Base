@@ -62,6 +62,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
@@ -80,23 +81,27 @@ class MainActivity : ComponentActivity() {
     private var pendingGoogleIdToken: String? = null
     private var pendingFirebaseDiagnostic: FirebaseDiagnostic? = null
     private var pendingDownload: PendingDownload? = null
-    private var pendingExport: PendingExport? = null
-    private var pendingExportNotification: Pair<String, Uri>? = null
+    private val pendingExports = ArrayDeque<PendingExport>()
+    private val pendingExportNotifications = ArrayDeque<SavedExport>()
+    private val exportExecutor = Executors.newSingleThreadExecutor()
+    private var exportPermissionRequestInProgress = false
     private var notificationPermissionRequestInProgress = false
+    private var notificationSettingsOffered = false
+    private var pageGeneration = 0L
     private var exitConfirmationDialog: AlertDialog? = null
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         notificationPermissionRequestInProgress = false
-        val notification = pendingExportNotification
-        pendingExportNotification = null
-        if (granted && notification != null) {
-            Log.d(TAG, "[EXPORT_NOTIFICATION] before showDownloadNotification after permission grant")
-            showDownloadNotification(notification.first, notification.second)
-            Log.d(TAG, "[EXPORT_NOTIFICATION] after showDownloadNotification after permission grant")
+        if (granted) {
+            while (pendingExportNotifications.isNotEmpty()) {
+                showDownloadNotification(pendingExportNotifications.removeFirst())
+            }
         } else if (!granted) {
+            pendingExportNotifications.clear()
             Log.w(TAG, "[EXPORT_NOTIFICATION] POST_NOTIFICATIONS permission denied")
+            offerNotificationSettingsIfNeeded()
         }
     }
 
@@ -115,13 +120,17 @@ class MainActivity : ComponentActivity() {
     private val exportPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        val export = pendingExport
-        pendingExport = null
-        if (granted && export != null) {
-            saveExportAsync(export)
+        exportPermissionRequestInProgress = false
+        val exports = pendingExports.toList()
+        pendingExports.clear()
+        if (granted) {
+            exports.forEach(::saveExportAsync)
         } else if (!granted) {
             Toast.makeText(this, R.string.download_permission_denied, Toast.LENGTH_LONG).show()
             Log.e(TAG, "[EXPORT] Android bridge error: storage permission denied")
+            exports.forEach {
+                publishExportResult(it, "error", getString(R.string.download_permission_denied))
+            }
         }
     }
 
@@ -339,7 +348,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handleExport(fileName: String, mimeType: String, base64: String) {
+    private fun handleExport(
+        fileName: String,
+        mimeType: String,
+        base64: String,
+        requestId: String? = null,
+    ) {
         webView.post {
             if (!isTrustedSite(webView.url)) {
                 Log.e(TAG, "[EXPORT] Android bridge error: untrusted page")
@@ -348,7 +362,8 @@ class MainActivity : ComponentActivity() {
 
             val safeFileName = File(fileName).name.takeIf { it.isNotBlank() && it != "." }
             if (safeFileName == null) {
-                showExportError(IllegalArgumentException("Invalid file name"))
+                val export = PendingExport(fileName, mimeType, ByteArray(0), requestId, webView.url, pageGeneration)
+                showExportError(export, IllegalArgumentException("Invalid file name"))
                 return@post
             }
 
@@ -362,19 +377,28 @@ class MainActivity : ComponentActivity() {
                     fileName = safeFileName,
                     mimeType = mimeType.ifBlank { DEFAULT_EXPORT_MIME_TYPE },
                     bytes = Base64.decode(encodedContent, Base64.DEFAULT),
+                    requestId = requestId,
+                    sourceUrl = webView.url,
+                    pageGeneration = pageGeneration,
                 )
             } catch (error: IllegalArgumentException) {
-                showExportError(error)
+                val export = PendingExport(safeFileName, mimeType, ByteArray(0), requestId, webView.url, pageGeneration)
+                showExportError(export, error)
                 return@post
             }
+
+            publishExportResult(export, "started")
 
             if (
                 Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
                 ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
                 PackageManager.PERMISSION_GRANTED
             ) {
-                pendingExport = export
-                exportPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                pendingExports.addLast(export)
+                if (!exportPermissionRequestInProgress) {
+                    exportPermissionRequestInProgress = true
+                    exportPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
             } else {
                 saveExportAsync(export)
             }
@@ -382,9 +406,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun saveExportAsync(export: PendingExport) {
-        Thread {
+        exportExecutor.execute {
             try {
-                val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val saved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     saveExportWithMediaStore(export)
                 } else {
                     saveLegacyExport(export)
@@ -392,19 +416,19 @@ class MainActivity : ComponentActivity() {
                 Log.d(TAG, "[EXPORT] Android bridge download OK")
                 runOnUiThread {
                     Toast.makeText(this, R.string.export_saved, Toast.LENGTH_SHORT).show()
-                    Log.d(TAG, "[EXPORT_NOTIFICATION] before showDownloadNotification after export")
-                    showDownloadNotification(export.fileName, uri)
-                    Log.d(TAG, "[EXPORT_NOTIFICATION] after showDownloadNotification after export")
+                    publishExportResult(export, "saved", savedFileName = saved.fileName)
+                    showDownloadNotification(saved)
                 }
             } catch (error: Exception) {
-                showExportError(error)
+                showExportError(export, error)
             }
-        }.start()
+        }
     }
 
-    private fun saveExportWithMediaStore(export: PendingExport): Uri {
+    private fun saveExportWithMediaStore(export: PendingExport): SavedExport {
+        val fileName = availableMediaStoreName(export.fileName)
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, export.fileName)
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
             put(MediaStore.Downloads.MIME_TYPE, export.mimeType)
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             put(MediaStore.Downloads.IS_PENDING, 1)
@@ -416,8 +440,10 @@ class MainActivity : ComponentActivity() {
                 ?: throw IOException("Unable to open the download")
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
-            contentResolver.update(uri, values, null, null)
-            return uri
+            if (contentResolver.update(uri, values, null, null) <= 0) {
+                throw IOException("Unable to publish the download")
+            }
+            return SavedExport(mediaStoreDisplayName(uri) ?: fileName, export.mimeType, uri)
         } catch (error: Exception) {
             contentResolver.delete(uri, null, null)
             throw error
@@ -425,12 +451,12 @@ class MainActivity : ComponentActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun saveLegacyExport(export: PendingExport): Uri {
+    private fun saveLegacyExport(export: PendingExport): SavedExport {
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if (!downloads.exists() && !downloads.mkdirs()) {
             throw IOException("Unable to create the Downloads directory")
         }
-        val outputFile = File(downloads, export.fileName)
+        val outputFile = availableLegacyFile(downloads, export.fileName)
         FileOutputStream(outputFile).use { it.write(export.bytes) }
         val scanCompleted = CountDownLatch(1)
         val scannedUri = AtomicReference<Uri?>()
@@ -445,18 +471,66 @@ class MainActivity : ComponentActivity() {
         if (!scanCompleted.await(MEDIA_SCAN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
             throw IOException("Timed out while indexing the download")
         }
-        return scannedUri.get() ?: throw IOException("Unable to index the download")
+        val uri = scannedUri.get() ?: throw IOException("Unable to index the download")
+        return SavedExport(outputFile.name, export.mimeType, uri)
     }
 
-    private fun showDownloadNotification(fileName: String, uri: Uri) {
+    private fun availableMediaStoreName(requestedName: String): String {
+        var candidate = requestedName
+        var suffix = 1
+        while (mediaStoreNameExists(candidate)) {
+            candidate = nameWithSuffix(requestedName, suffix++)
+        }
+        return candidate
+    }
+
+    private fun mediaStoreNameExists(fileName: String): Boolean {
+        val projection = arrayOf(MediaStore.Downloads._ID)
+        val selection = "${MediaStore.Downloads.DISPLAY_NAME} = ? AND " +
+            "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?"
+        return contentResolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            projection,
+            selection,
+            arrayOf(fileName, "${Environment.DIRECTORY_DOWNLOADS}%"),
+            null,
+        )?.use { it.moveToFirst() } == true
+    }
+
+    private fun mediaStoreDisplayName(uri: Uri): String? = contentResolver.query(
+        uri,
+        arrayOf(MediaStore.Downloads.DISPLAY_NAME),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        if (!cursor.moveToFirst()) null else cursor.getString(0)
+    }
+
+    private fun availableLegacyFile(directory: File, requestedName: String): File {
+        var candidate = File(directory, requestedName)
+        var suffix = 1
+        while (candidate.exists()) candidate = File(directory, nameWithSuffix(requestedName, suffix++))
+        return candidate
+    }
+
+    private fun nameWithSuffix(fileName: String, suffix: Int): String {
+        val dot = fileName.lastIndexOf('.')
+        return if (dot > 0) {
+            "${fileName.substring(0, dot)} ($suffix)${fileName.substring(dot)}"
+        } else {
+            "$fileName ($suffix)"
+        }
+    }
+
+    private fun showDownloadNotification(saved: SavedExport) {
         if (requestNotificationPermissionIfNeeded()) {
-            pendingExportNotification = fileName to uri
+            pendingExportNotifications.addLast(saved)
             return
         }
 
         val notificationId = System.currentTimeMillis().toInt()
         Log.d(TAG, "[DOWNLOAD_NOTIFICATION] notificationId: $notificationId")
-        Log.d(TAG, "[DOWNLOAD_NOTIFICATION] fileName: $fileName")
 
         val notificationManager = ContextCompat.getSystemService(
             this,
@@ -464,6 +538,12 @@ class MainActivity : ComponentActivity() {
         )
         if (notificationManager == null) {
             Log.e(TAG, "[EXPORT_NOTIFICATION] NotificationManager unavailable")
+            return
+        }
+
+        if (!notificationManager.areNotificationsEnabled()) {
+            Log.w(TAG, "[EXPORT_NOTIFICATION] application notifications are disabled")
+            offerNotificationSettingsIfNeeded()
             return
         }
 
@@ -478,28 +558,97 @@ class MainActivity : ComponentActivity() {
                 enableLights(false)
             }
             notificationManager.createNotificationChannel(channel)
+            val effectiveChannel = notificationManager.getNotificationChannel(DOWNLOAD_NOTIFICATION_CHANNEL_ID)
+            if (effectiveChannel?.importance != null &&
+                effectiveChannel.importance < NotificationManager.IMPORTANCE_HIGH
+            ) {
+                Log.w(TAG, "[EXPORT_NOTIFICATION] download channel importance is below HIGH")
+                offerNotificationSettingsIfNeeded()
+            }
         }
 
         val openFileIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, EXCEL_MIME_TYPE)
+            setDataAndType(saved.uri, saved.mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val openFilePendingIntent = PendingIntent.getActivity(
-            this,
-            notificationId,
-            openFileIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = NotificationCompat.Builder(this, DOWNLOAD_NOTIFICATION_CHANNEL_ID)
+        val openFilePendingIntent = if (openFileIntent.resolveActivity(packageManager) != null) {
+            PendingIntent.getActivity(
+                this,
+                notificationId,
+                openFileIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        } else {
+            Log.w(TAG, "[EXPORT_NOTIFICATION] no application can open exported MIME type")
+            null
+        }
+        val builder = NotificationCompat.Builder(this, DOWNLOAD_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Téléchargement terminé")
-            .setContentText(fileName)
-            .setContentIntent(openFilePendingIntent)
+            .setContentText(saved.fileName)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .build()
-        notificationManager.notify(notificationId, notification)
+        openFilePendingIntent?.let(builder::setContentIntent)
+        notificationManager.notify(notificationId, builder.build())
         Log.d(TAG, "[EXPORT_NOTIFICATION] notification displayed")
+    }
+
+    private fun offerNotificationSettingsIfNeeded() {
+        if (notificationSettingsOffered || isFinishing || isDestroyed) return
+        notificationSettingsOffered = true
+        AlertDialog.Builder(this)
+            .setTitle(R.string.notification_settings_title)
+            .setMessage(R.string.notification_settings_message)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.notification_settings_open) { _, _ ->
+                val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        putExtra(Settings.EXTRA_CHANNEL_ID, DOWNLOAD_NOTIFICATION_CHANNEL_ID)
+                    }
+                } else {
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    }
+                }
+                try {
+                    startActivity(intent)
+                } catch (error: ActivityNotFoundException) {
+                    Log.w(TAG, "Notification settings unavailable", error)
+                }
+            }
+            .show()
+    }
+
+    private fun publishExportResult(
+        export: PendingExport,
+        status: String,
+        error: String? = null,
+        savedFileName: String = export.fileName,
+    ) {
+        val requestId = export.requestId ?: return
+        runOnUiThread {
+            if (isDestroyed) return@runOnUiThread
+            if (pageGeneration != export.pageGeneration ||
+                webView.url != export.sourceUrl ||
+                !isTrustedSite(webView.url)
+            ) {
+                Log.w(TAG, "[EXPORT] result not delivered because the source page changed")
+                return@runOnUiThread
+            }
+            val detail = JSONObject()
+                .put("requestId", requestId)
+                .put("status", status)
+                .put("fileName", savedFileName)
+            error?.let { detail.put("error", it) }
+            // JSONObject produces a JSON value; no request value is interpolated as JavaScript source.
+            val serializedDetail = detail.toString()
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('android-download-result', " +
+                    "{detail: $serializedDetail}));",
+                null,
+            )
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded(): Boolean {
@@ -519,10 +668,11 @@ class MainActivity : ComponentActivity() {
         return true
     }
 
-    private fun showExportError(error: Exception) {
+    private fun showExportError(export: PendingExport, error: Exception) {
         Log.e(TAG, "[EXPORT] Android bridge error", error)
         runOnUiThread {
             Toast.makeText(this, R.string.download_failed, Toast.LENGTH_LONG).show()
+            publishExportResult(export, "error", getString(R.string.download_failed))
         }
     }
 
@@ -974,6 +1124,7 @@ class MainActivity : ComponentActivity() {
         splashIconAnimator = null
         exitConfirmationDialog?.dismiss()
         exitConfirmationDialog = null
+        exportExecutor.shutdown()
         webView.stopLoading()
         webView.webViewClient = WebViewClient()
         webView.destroy()
@@ -982,6 +1133,7 @@ class MainActivity : ComponentActivity() {
 
     private inner class SiteWebViewClient : WebViewClient() {
         override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+            pageGeneration++
             isWebPageLoaded = false
             isFirebaseWebBridgeReady = false
             super.onPageStarted(view, url, favicon)
@@ -1035,6 +1187,11 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun saveFile(fileName: String, mimeType: String, base64: String) {
             handleExport(fileName, mimeType, base64)
+        }
+
+        @JavascriptInterface
+        fun saveFile(fileName: String, mimeType: String, base64: String, requestId: String) {
+            handleExport(fileName, mimeType, base64, requestId)
         }
     }
 
@@ -1092,6 +1249,15 @@ class MainActivity : ComponentActivity() {
         val fileName: String,
         val mimeType: String,
         val bytes: ByteArray,
+        val requestId: String?,
+        val sourceUrl: String?,
+        val pageGeneration: Long,
+    )
+
+    private data class SavedExport(
+        val fileName: String,
+        val mimeType: String,
+        val uri: Uri,
     )
 
     private fun isTrustedSite(url: String?): Boolean {
@@ -1106,7 +1272,6 @@ class MainActivity : ComponentActivity() {
         const val DOWNLOADS_BRIDGE_NAME = "AndroidDownloads"
         const val APP_BRIDGE_NAME = "AndroidApp"
         const val DEFAULT_EXPORT_MIME_TYPE = "application/octet-stream"
-        const val EXCEL_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         const val DOWNLOAD_NOTIFICATION_CHANNEL_ID = "downloads"
         const val MEDIA_SCAN_TIMEOUT_SECONDS = 10L
         const val TAG = "FirebaseAuth"
