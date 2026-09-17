@@ -54,6 +54,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
@@ -77,9 +78,14 @@ class MainActivity : ComponentActivity() {
     private var splashIconAnimator: AnimatorSet? = null
     private var isSplashVisible = true
     private var accountSelectionInProgress = false
+    private var signOutInProgress = false
+    private var authGeneration = 0L
+    private var activeGoogleAttemptGeneration: Long? = null
+    private var firebaseSignInInProgressGeneration: Long? = null
+    private var pendingNativeSignOut: PendingNativeSignOut? = null
     private var isWebPageLoaded = false
     private var isFirebaseWebBridgeReady = false
-    private var pendingGoogleIdToken: String? = null
+    private var pendingGoogleIdToken: PendingGoogleIdToken? = null
     private var pendingFirebaseDiagnostic: FirebaseDiagnostic? = null
     private var pendingDownload: PendingDownload? = null
     private val pendingExports = ArrayDeque<PendingExport>()
@@ -90,6 +96,13 @@ class MainActivity : ComponentActivity() {
     private var notificationSettingsOffered = false
     private var pageGeneration = 0L
     private var exitConfirmationDialog: AlertDialog? = null
+    private val googleSignInClient: GoogleSignInClient by lazy {
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        GoogleSignIn.getClient(this, options)
+    }
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -138,6 +151,8 @@ class MainActivity : ComponentActivity() {
     private val googleSignInLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
+        val attemptGeneration = activeGoogleAttemptGeneration
+        activeGoogleAttemptGeneration = null
         accountSelectionInProgress = false
         Log.d(TAG, "[BRIDGE_CHECK] activity_result_received")
         Log.d(TAG, "[GOOGLE_CALLBACK] activity_result_received")
@@ -148,7 +163,13 @@ class MainActivity : ComponentActivity() {
         }
         Log.d(TAG, "[GOOGLE_CALLBACK] intent_received=${result.data != null}")
 
+        if (attemptGeneration == null || attemptGeneration != authGeneration) {
+            Log.d(TAG, "[GOOGLE_CALLBACK] stale_result_ignored")
+            return@registerForActivityResult
+        }
+
         if (result.resultCode != RESULT_OK) {
+            pendingGoogleIdToken = null
             val resultLabel = if (result.resultCode == RESULT_CANCELED) {
                 "RESULT_CANCELED"
             } else {
@@ -180,7 +201,7 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             } else {
-                signInToFirebase(idToken)
+                signInToFirebase(idToken, attemptGeneration)
             }
         } catch (error: ApiException) {
             Log.e(
@@ -271,14 +292,45 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showGoogleAccountChooser() {
-        if (accountSelectionInProgress || !isTrustedSite(webView.url)) return
+        if (accountSelectionInProgress || signOutInProgress || !isTrustedSite(webView.url)) return
         accountSelectionInProgress = true
+        val attemptGeneration = ++authGeneration
+        activeGoogleAttemptGeneration = attemptGeneration
+        pendingGoogleIdToken = null
+        Log.d(TAG, "[ANDROID_AUTH] clearing_google_session_before_signin")
+        googleSignInClient.signOut().addOnCompleteListener(this) { task ->
+            if (attemptGeneration != authGeneration || activeGoogleAttemptGeneration != attemptGeneration) {
+                Log.d(TAG, "[ANDROID_AUTH] stale_pre_signin_signout_ignored")
+                return@addOnCompleteListener
+            }
+            if (!task.isSuccessful) {
+                accountSelectionInProgress = false
+                activeGoogleAttemptGeneration = null
+                Log.e(TAG, "Unable to clear Google session before sign-in", task.exception)
+                publishFirebaseDiagnostic(
+                    FirebaseDiagnostic.disconnected(
+                        event = "GOOGLE_SIGN_OUT_ERROR",
+                        error = task.exception?.message ?: "Unable to clear Google session",
+                    ),
+                )
+                return@addOnCompleteListener
+            }
+            launchGoogleAccountChooser(attemptGeneration)
+        }
+    }
+
+    private fun launchGoogleAccountChooser(attemptGeneration: Long) {
+        if (
+            attemptGeneration != authGeneration ||
+            activeGoogleAttemptGeneration != attemptGeneration ||
+            !isTrustedSite(webView.url)
+        ) {
+            accountSelectionInProgress = false
+            activeGoogleAttemptGeneration = null
+            return
+        }
         Log.d(TAG, "[ANDROID_AUTH] start_google_signin")
-        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(getString(R.string.default_web_client_id))
-            .requestEmail()
-            .build()
-        val signInIntent = GoogleSignIn.getClient(this, options).signInIntent
+        val signInIntent = googleSignInClient.signInIntent
         try {
             Log.d(TAG, "[BRIDGE_CHECK] google_launcher_called")
             Log.d(TAG, "[GOOGLE_CALLBACK] launcher_launch_called")
@@ -680,7 +732,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun signInToFirebase(idToken: String) {
+    private fun signInToFirebase(idToken: String, attemptGeneration: Long) {
+        if (attemptGeneration != authGeneration) return
         val auth = try {
             FirebaseAuth.getInstance()
         } catch (error: IllegalStateException) {
@@ -690,8 +743,18 @@ class MainActivity : ComponentActivity() {
             )
             return
         }
+        firebaseSignInInProgressGeneration = attemptGeneration
         auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
             .addOnCompleteListener(this) { task ->
+                if (firebaseSignInInProgressGeneration == attemptGeneration) {
+                    firebaseSignInInProgressGeneration = null
+                }
+                if (attemptGeneration != authGeneration) {
+                    Log.d(TAG, "[FIREBASE_RESULT] stale_sign_in_ignored")
+                    if (task.isSuccessful) auth.signOut()
+                    finishSignOutIfReady()
+                    return@addOnCompleteListener
+                }
                 val user = if (task.isSuccessful) auth.currentUser else null
                 if (user == null) {
                     Log.e(TAG, "[FIREBASE_RESULT] sign_in_error", task.exception)
@@ -716,12 +779,13 @@ class MainActivity : ComponentActivity() {
                         error = "",
                     ),
                 )
-                queueGoogleIdTokenForWeb(idToken)
+                queueGoogleIdTokenForWeb(idToken, attemptGeneration)
             }
     }
 
-    private fun queueGoogleIdTokenForWeb(idToken: String) {
-        pendingGoogleIdToken = idToken
+    private fun queueGoogleIdTokenForWeb(idToken: String, attemptGeneration: Long) {
+        if (attemptGeneration != authGeneration) return
+        pendingGoogleIdToken = PendingGoogleIdToken(idToken, attemptGeneration)
         if (isFirebaseWebBridgeReady) deliverPendingGoogleIdToken() else checkWebBridgeReady()
     }
 
@@ -744,31 +808,142 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun deliverPendingGoogleIdToken() {
-        val idToken = pendingGoogleIdToken ?: return
+        val pendingToken = pendingGoogleIdToken ?: return
         webView.post {
-            if (!isWebPageLoaded || !isFirebaseWebBridgeReady || !isTrustedSite(webView.url)) {
+            if (
+                pendingToken.generation != authGeneration ||
+                !isWebPageLoaded ||
+                !isFirebaseWebBridgeReady ||
+                !isTrustedSite(webView.url)
+            ) {
+                if (pendingToken.generation != authGeneration) pendingGoogleIdToken = null
                 return@post
             }
             // JSONObject.quote performs the required JavaScript string escaping; never interpolate raw tokens.
-            val encodedToken = JSONObject.quote(idToken)
+            val encodedToken = JSONObject.quote(pendingToken.idToken)
+            val encodedGeneration = pendingToken.generation
             pendingGoogleIdToken = null
             Log.d(TAG, "[BRIDGE_CHECK] evaluate_javascript_called")
             webView.evaluateJavascript(
                 """
                     (() => {
                       if (typeof window.firebaseLoginWithToken !== 'function') {
-                        window.AndroidAuth.onJavascriptCallback(false, 'firebaseLoginWithToken unavailable');
+                        window.AndroidAuth.onJavascriptCallback(false, 'firebaseLoginWithToken unavailable', $encodedGeneration);
                         return;
                       }
                       Promise.resolve(window.firebaseLoginWithToken($encodedToken))
-                        .then(() => window.AndroidAuth.onJavascriptCallback(true, null))
+                        .then(() => window.AndroidAuth.onJavascriptCallback(true, null, $encodedGeneration))
                         .catch(error => {
                           const message = error instanceof Error ? error.message : String(error);
-                          window.AndroidAuth.onJavascriptCallback(false, message);
+                          window.AndroidAuth.onJavascriptCallback(false, message, $encodedGeneration);
                         });
                     })();
                 """.trimIndent(),
                 { Log.d(TAG, "[WEBVIEW_BRIDGE] token_sent") },
+            )
+        }
+    }
+
+    private fun signOutNative(requestId: String) {
+        val sourceUrl = webView.url
+        val sourcePageGeneration = pageGeneration
+        if (!isTrustedSite(sourceUrl)) return
+        if (signOutInProgress) {
+            publishSignOutResult(
+                requestId = requestId,
+                success = false,
+                error = "A native sign-out is already in progress",
+                sourceUrl = sourceUrl,
+                sourcePageGeneration = sourcePageGeneration,
+            )
+            return
+        }
+
+        signOutInProgress = true
+        authGeneration++
+        activeGoogleAttemptGeneration = null
+        accountSelectionInProgress = false
+        pendingGoogleIdToken = null
+        pendingFirebaseDiagnostic = null
+        isFirebaseWebBridgeReady = false
+
+        var firebaseError: String? = null
+        try {
+            FirebaseAuth.getInstance().signOut()
+        } catch (error: RuntimeException) {
+            firebaseError = error.message ?: "Firebase sign-out failed"
+            Log.e(TAG, "[ANDROID_AUTH] Firebase sign-out failed", error)
+        }
+
+        pendingNativeSignOut = PendingNativeSignOut(
+            requestId = requestId,
+            sourceUrl = sourceUrl,
+            sourcePageGeneration = sourcePageGeneration,
+            error = firebaseError,
+        )
+
+        try {
+            googleSignInClient.signOut().addOnCompleteListener(this) { task ->
+                val googleError = if (task.isSuccessful) null else {
+                    task.exception?.message ?: "Google sign-out failed"
+                }
+                pendingNativeSignOut = pendingNativeSignOut?.copy(
+                    googleCompleted = true,
+                    error = listOfNotNull(pendingNativeSignOut?.error, googleError)
+                        .joinToString("; ")
+                        .ifBlank { null },
+                )
+                finishSignOutIfReady()
+            }
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "[ANDROID_AUTH] Google sign-out failed", error)
+            pendingNativeSignOut = pendingNativeSignOut?.copy(
+                googleCompleted = true,
+                error = listOfNotNull(firebaseError, error.message ?: "Google sign-out failed")
+                    .joinToString("; "),
+            )
+            finishSignOutIfReady()
+        }
+    }
+
+    private fun finishSignOutIfReady() {
+        val pending = pendingNativeSignOut ?: return
+        if (!pending.googleCompleted || firebaseSignInInProgressGeneration != null) return
+        pendingNativeSignOut = null
+        signOutInProgress = false
+        publishSignOutResult(
+            requestId = pending.requestId,
+            success = pending.error == null,
+            error = pending.error,
+            sourceUrl = pending.sourceUrl,
+            sourcePageGeneration = pending.sourcePageGeneration,
+        )
+    }
+
+    private fun publishSignOutResult(
+        requestId: String,
+        success: Boolean,
+        error: String?,
+        sourceUrl: String?,
+        sourcePageGeneration: Long,
+    ) {
+        webView.post {
+            if (
+                pageGeneration != sourcePageGeneration ||
+                webView.url != sourceUrl ||
+                !isTrustedSite(webView.url)
+            ) {
+                Log.d(TAG, "[ANDROID_AUTH] sign-out result target is no longer valid")
+                return@post
+            }
+            val detail = JSONObject()
+                .put("requestId", requestId)
+                .put("success", success)
+                .apply { if (error != null) put("error", error) }
+            val eventName = JSONObject.quote(ANDROID_AUTH_SIGN_OUT_EVENT)
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent($eventName, { detail: ${detail} }));",
+                null,
             )
         }
     }
@@ -1178,9 +1353,14 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun onJavascriptCallback(success: Boolean, error: String?) {
+        fun signOut(requestId: String) {
+            webView.post { signOutNative(requestId) }
+        }
+
+        @JavascriptInterface
+        fun onJavascriptCallback(success: Boolean, error: String?, generation: Long) {
             webView.post {
-                if (!isTrustedSite(webView.url)) return@post
+                if (generation != authGeneration || !isTrustedSite(webView.url)) return@post
                 if (success) Log.d(TAG, "[WEBVIEW_BRIDGE] javascript_callback_success")
                 else Log.e(TAG, "[WEBVIEW_BRIDGE] javascript_callback_error: ${error.orEmpty()}")
             }
@@ -1249,6 +1429,19 @@ class MainActivity : ComponentActivity() {
         val mimeType: String?,
     )
 
+    private data class PendingGoogleIdToken(
+        val idToken: String,
+        val generation: Long,
+    )
+
+    private data class PendingNativeSignOut(
+        val requestId: String,
+        val sourceUrl: String?,
+        val sourcePageGeneration: Long,
+        val googleCompleted: Boolean = false,
+        val error: String? = null,
+    )
+
     private data class PendingExport(
         val fileName: String,
         val mimeType: String,
@@ -1273,6 +1466,7 @@ class MainActivity : ComponentActivity() {
         const val SITE_URL = "https://kanto0316.github.io/Album"
         const val SITE_HOST = "kanto0316.github.io"
         const val GOOGLE_BRIDGE_NAME = "AndroidAuth"
+        const val ANDROID_AUTH_SIGN_OUT_EVENT = "android-auth-signout-result"
         const val DOWNLOADS_BRIDGE_NAME = "AndroidDownloads"
         const val APP_BRIDGE_NAME = "AndroidApp"
         const val DEFAULT_EXPORT_MIME_TYPE = "application/octet-stream"
