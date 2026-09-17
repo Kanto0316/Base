@@ -64,6 +64,7 @@ import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
@@ -375,7 +376,7 @@ class MainActivity : ComponentActivity() {
                 }
                 PendingExport(
                     fileName = safeFileName,
-                    mimeType = mimeType.ifBlank { DEFAULT_EXPORT_MIME_TYPE },
+                    mimeType = exportMimeType(safeFileName, mimeType),
                     bytes = Base64.decode(encodedContent, Base64.DEFAULT),
                     requestId = requestId,
                     sourceUrl = webView.url,
@@ -523,13 +524,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun exportMimeType(fileName: String, requestedMimeType: String): String =
+        if (fileName.endsWith(".xlsx", ignoreCase = true)) {
+            XLSX_MIME_TYPE
+        } else {
+            requestedMimeType.ifBlank { DEFAULT_EXPORT_MIME_TYPE }
+        }
+
     private fun showDownloadNotification(saved: SavedExport) {
         if (requestNotificationPermissionIfNeeded()) {
             pendingExportNotifications.addLast(saved)
             return
         }
 
-        val notificationId = System.currentTimeMillis().toInt()
+        val notificationId = nextDownloadNotificationId.incrementAndGet()
         Log.d(TAG, "[DOWNLOAD_NOTIFICATION] notificationId: $notificationId")
 
         val notificationManager = ContextCompat.getSystemService(
@@ -567,28 +575,24 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val openFileIntent = Intent(Intent.ACTION_VIEW).apply {
+        // Always target our private trampoline activity. Package visibility can make an
+        // ACTION_VIEW resolve check return null even though Android can dispatch it.
+        val openFileIntent = Intent(this, OpenExportActivity::class.java).apply {
             setDataAndType(saved.uri, saved.mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        val openFilePendingIntent = if (openFileIntent.resolveActivity(packageManager) != null) {
-            PendingIntent.getActivity(
-                this,
-                notificationId,
-                openFileIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        } else {
-            Log.w(TAG, "[EXPORT_NOTIFICATION] no application can open exported MIME type")
-            null
-        }
+        val openFilePendingIntent = PendingIntent.getActivity(
+            this,
+            notificationId,
+            openFileIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val builder = NotificationCompat.Builder(this, DOWNLOAD_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Téléchargement terminé")
             .setContentText(saved.fileName)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-        openFilePendingIntent?.let(builder::setContentIntent)
+            .setContentIntent(openFilePendingIntent)
         notificationManager.notify(notificationId, builder.build())
         Log.d(TAG, "[EXPORT_NOTIFICATION] notification displayed")
     }
@@ -1272,6 +1276,7 @@ class MainActivity : ComponentActivity() {
         const val DOWNLOADS_BRIDGE_NAME = "AndroidDownloads"
         const val APP_BRIDGE_NAME = "AndroidApp"
         const val DEFAULT_EXPORT_MIME_TYPE = "application/octet-stream"
+        const val XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         const val DOWNLOAD_NOTIFICATION_CHANNEL_ID = "downloads"
         const val MEDIA_SCAN_TIMEOUT_SECONDS = 10L
         const val TAG = "FirebaseAuth"
@@ -1287,6 +1292,7 @@ class MainActivity : ComponentActivity() {
         const val SPLASH_ICON_START_SCALE = 0.84f
         const val SPLASH_LOADING_TEXT_ALPHA = 0.85f
         const val SPLASH_COPYRIGHT_ALPHA = 0.65f
+        val nextDownloadNotificationId = AtomicInteger(System.currentTimeMillis().toInt())
 
         val GOOGLE_BUTTON_BRIDGE_SCRIPT = """
             (() => {
