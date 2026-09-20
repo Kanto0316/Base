@@ -870,8 +870,6 @@ class MainActivity : ComponentActivity() {
 
     private fun createSplashView(): View = FrameLayout(this).apply {
         setBackgroundResource(R.drawable.splash_background)
-        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-        contentDescription = getString(R.string.splash_loading)
 
         val centralContent = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -901,7 +899,7 @@ class MainActivity : ComponentActivity() {
                     ).apply { setMargins(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4)) },
                 )
             }
-            addView(iconCard, LinearLayout.LayoutParams(dpToPx(108), dpToPx(108)))
+            addView(iconCard, LinearLayout.LayoutParams(dpToPx(84), dpToPx(84)))
 
             addView(TextView(context).apply {
                 text = getString(R.string.app_name)
@@ -928,9 +926,9 @@ class MainActivity : ComponentActivity() {
                 }
                 dots.addView(
                     dot,
-                    LinearLayout.LayoutParams(dpToPx(9), dpToPx(9)).apply {
-                        marginStart = dpToPx(5)
-                        marginEnd = dpToPx(5)
+                    LinearLayout.LayoutParams(dpToPx(6), dpToPx(6)).apply {
+                        marginStart = dpToPx(4)
+                        marginEnd = dpToPx(4)
                     },
                 )
                 splashDotsAnimators += ValueAnimator.ofFloat(0f, 1f, 0f).apply {
@@ -940,7 +938,7 @@ class MainActivity : ComponentActivity() {
                     addUpdateListener {
                         val progress = it.animatedValue as Float
                         dot.alpha = SPLASH_DOT_MIN_ALPHA +
-                            progress * (1f - SPLASH_DOT_MIN_ALPHA)
+                            progress * (SPLASH_DOT_MAX_ALPHA - SPLASH_DOT_MIN_ALPHA)
                         val scale = SPLASH_DOT_MIN_SCALE +
                             progress * (1f - SPLASH_DOT_MIN_SCALE)
                         dot.scaleX = scale
@@ -951,19 +949,8 @@ class MainActivity : ComponentActivity() {
             }
             addView(dots, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                dpToPx(28),
-            ).apply { topMargin = dpToPx(18) })
-
-            addView(TextView(context).apply {
-                text = getString(R.string.splash_loading_data)
-                textSize = 15f
-                gravity = Gravity.CENTER
-                setTextColor(ContextCompat.getColor(context, R.color.brand_on_primary))
-                alpha = SPLASH_LOADING_TEXT_ALPHA
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dpToPx(10) })
+                dpToPx(20),
+            ).apply { topMargin = dpToPx(16) })
 
             splashIconAnimator = AnimatorSet().apply {
                 playTogether(
@@ -1287,10 +1274,10 @@ class MainActivity : ComponentActivity() {
         const val SPLASH_DOT_DELAY_MS = 160L
         const val SPLASH_ICON_ANIMATION_MS = 650L
         const val SPLASH_DOT_COUNT = 3
-        const val SPLASH_DOT_MIN_ALPHA = 0.28f
+        const val SPLASH_DOT_MIN_ALPHA = 0.2f
+        const val SPLASH_DOT_MAX_ALPHA = 0.7f
         const val SPLASH_DOT_MIN_SCALE = 0.72f
         const val SPLASH_ICON_START_SCALE = 0.84f
-        const val SPLASH_LOADING_TEXT_ALPHA = 0.85f
         const val SPLASH_COPYRIGHT_ALPHA = 0.65f
         val nextDownloadNotificationId = AtomicInteger(System.currentTimeMillis().toInt())
 
